@@ -102,21 +102,21 @@ namespace RazorDB {
         private Cache<byte[]> _blockDataCache;
 
         public KeyEx[] GetBlockTableIndex(string baseName, int level, int version) {
+            KeyEx[] returnValue = null;
 
             string fileName = Config.SortedBlockTableFile(baseName, level, version);
             KeyEx[] index;
 
             if (_blockIndexCache.TryGetValue(fileName, out index)) {
-                return index;
+                returnValue = index;
+            } else {
+                using(var sbt = new SortedBlockTable(null, baseName, level, version)) {
+                    index = sbt.GetIndex();
+                    _blockIndexCache.Set(fileName, index);
+                    returnValue = index;
+                };
             }
-            var sbt = new SortedBlockTable(null, baseName, level, version);
-            try {
-                index = sbt.GetIndex();
-                _blockIndexCache.Set(fileName, index);
-                return index;
-            } finally {
-                sbt.Close();
-            }
+            return returnValue;
         }
 
         public byte[] GetBlock(string baseName, int level, int version, int blockNum) {

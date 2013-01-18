@@ -22,7 +22,7 @@ using System.IO;
 using System.Diagnostics;
 
 namespace RazorDB {
-    
+
     public class KeyValueStore : IDisposable {
 
         public KeyValueStore(string baseFileName) : this(baseFileName, null) {}
@@ -69,6 +69,7 @@ namespace RazorDB {
             foreach (var pair in _secondaryIndexes) {
                 pair.Value.Close();
             }
+            SortedBlockTable.CloseFileManager(Manifest.BaseFileName);
 
             string basePath = Path.GetFullPath(Manifest.BaseFileName);
             foreach (string file in Directory.GetFiles(basePath, "*.*", SearchOption.AllDirectories)) {
@@ -318,25 +319,24 @@ namespace RazorDB {
                 enumerators.Add(rotatedMemTable.EnumerateSnapshotFromKey(key));
             }
 
-            // Now check the files on disk
-            using (var manifestSnapshot = _manifest.GetLatestManifest()) {
-
-                List<SortedBlockTable> tables = new List<SortedBlockTable>();
-                try {
+            var tables = new List<SortedBlockTable>();
+            try {
+                // Now check the files on disk
+                using (var manifestSnapshot = _manifest.GetLatestManifest()) {
                     for (int i = 0; i < manifestSnapshot.NumLevels; i++) {
                         var pages = manifestSnapshot.GetPagesAtLevel(i)
                             .OrderByDescending(page => page.Version)
                             .Select(page => new SortedBlockTable(_cache, _manifest.BaseFileName, page.Level, page.Version));
                         tables.AddRange(pages);
+                        enumerators.AddRange(tables.Select(t => t.EnumerateFromKey(_cache, key)));
                     }
-                    enumerators.AddRange(tables.Select(t => t.EnumerateFromKey(_cache, key)));
-
                     foreach (var pair in MergeEnumerator.Merge(enumerators, t => t.Key)) {
                         yield return pair;
                     }
-                } finally {
-                    // make sure all the tables get closed
-                    tables.ForEach(table => table.Close());
+                }
+            } finally {
+                foreach (var table in tables) {
+                    table.Dispose();
                 }
             }
         }
@@ -413,6 +413,8 @@ namespace RazorDB {
                     idx.Value.Close();
                 }
             }
+
+            SortedBlockTable.CloseFileManager(_manifest.BaseFileName);
 
             // Don't finalize since we already closed it.
             GC.SuppressFinalize(this);

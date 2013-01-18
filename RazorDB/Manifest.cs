@@ -338,8 +338,7 @@ namespace RazorDB {
 
         public void NotifyPageReleased(PageRecord pageRec) {
             string path = Config.SortedBlockTableFile(BaseFileName, pageRec.Level, pageRec.Version);
-            if (File.Exists(path))
-                File.Delete(path);
+            SortedBlockTable.DeleteFile(BaseFileName, path);
         }
 
         private void Write(ManifestImmutable m) {
