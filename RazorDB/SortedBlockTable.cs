@@ -349,8 +349,6 @@ namespace RazorDB {
         }
     }
 
-    public delegate Value ExecuteReaderValue(SortedBlockTable parameter);
-
     public class SortedBlockTable : IDisposable {
         // Stores all open SortedBlockTable file managers.
         // The key is the base directory of key/value store using the SBT.
