@@ -114,7 +114,7 @@ namespace RazorDB {
                     index = sbt.GetIndex();
                     _blockIndexCache.Set(fileName, index);
                     returnValue = index;
-                };
+                }
             }
             return returnValue;
         }
