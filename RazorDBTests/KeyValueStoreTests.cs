@@ -1,17 +1,18 @@
-﻿/* 
-Copyright 2012 Gnoso Inc.
+﻿/*
+Copyright 2012, 2013 Gnoso Inc.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
+This software is licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except for what is in compliance with the License.
+
+You may obtain a copy of this license at
 
     http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either expressed or implied.
+
+See the License for the specific language governing permissions and limitations.
 */
 using System;
 using NUnit.Framework;
@@ -124,7 +125,126 @@ namespace RazorDBTests {
             }
         }
 
-        [Test, Explicit("Success depends on a race condition happening. Too unreliable for regular use.")]
+        [Test]
+        public void WriteSpeedTests() {
+            var sw = new Stopwatch();
+            var timingDict = new Dictionary<string, TimeSpan>();
+
+            Config.SortedBlockTableFileOptions = FileOptions.SequentialScan;
+            sw.Reset();
+            sw.Start();
+            DoWriteSpeedTests("TestData\\WriteSpeedTestsSequential1");
+            sw.Stop();
+            timingDict.Add("Sequential #1", sw.Elapsed);
+
+            //Config.SortedBlockTableFileOptions = FileOptions.Asynchronous;
+            //sw.Reset();
+            //sw.Start();
+            //DoWriteSpeedTests("TestData\\WriteSpeedTestsAsynchronous");
+            //sw.Stop();
+            //timingDict.Add("Asynchronous #1", sw.Elapsed);
+
+            //Config.SortedBlockTableFileOptions = FileOptions.SequentialScan | FileOptions.Asynchronous;
+            //sw.Reset();
+            //sw.Start();
+            //DoWriteSpeedTests("TestData\\WriteSpeedTestsSequentialORAsync1");
+            //sw.Stop();
+            //timingDict.Add("Sequential or Async #1", sw.Elapsed);
+
+
+            //Config.SortedBlockTableFileOptions = FileOptions.Asynchronous;
+            //sw.Reset();
+            //sw.Start();
+            //DoWriteSpeedTests("TestData\\WriteSpeedTestsAsynchronous2");
+            //sw.Stop();
+            //timingDict.Add("Asynchronous #2", sw.Elapsed);
+
+            //Config.SortedBlockTableFileOptions = FileOptions.SequentialScan;
+            //sw.Reset();
+            //sw.Start();
+            //DoWriteSpeedTests("TestData\\WriteSpeedTestsSequential2");
+            //sw.Stop();
+            //timingDict.Add("Sequential #2", sw.Elapsed);
+
+            //Config.SortedBlockTableFileOptions = FileOptions.SequentialScan | FileOptions.Asynchronous;
+            //sw.Reset();
+            //sw.Start();
+            //DoWriteSpeedTests("TestData\\WriteSpeedTestsSequentialORAsync2");
+            //sw.Stop();
+            //timingDict.Add("Sequential or Async #2", sw.Elapsed);
+
+            foreach (var key in timingDict.Keys)
+                Console.WriteLine("{0} elapsed time: {1}", key, timingDict[key]);
+        }
+
+        private static void DoWriteSpeedTests(string basepath) {
+            Action<KeyValueStore, int, int, int> InsertDenseBlock = (KeyValueStore db, int key, int density, int count) => {
+                byte[] value = ByteArray.Random(Config.MaxSmallValueSize - 12).InternalBytes;
+                for (int i = 0; i < count; i++) {
+                    byte[] keyBytes = BitConverter.GetBytes(key + density * i);
+                    Array.Reverse(keyBytes); // make sure they are in lexicographical order so they sort closely together.
+
+                    db.Set(keyBytes, value);
+                }
+            };
+
+            // Make sure that when we have high key density, pages don't start to overlap with more than 10 pages at the level higher than the current one.
+            string path = Path.GetFullPath(basepath);
+            using (var db = new KeyValueStore(path)) {
+                db.Truncate();
+                db.Manifest.Logger = (msg) => Console.WriteLine(msg);
+
+                InsertDenseBlock(db, 0, 1, 10000);
+                InsertDenseBlock(db, 20000, 1, 10000);
+                InsertDenseBlock(db, 15000, 1, 10000);
+            }
+        }
+
+        [Test]
+        public void KeyDensityMaximumPageOverlapTest() {
+
+            Action<KeyValueStore, int,int, int> InsertDenseBlock = (KeyValueStore db, int key, int density, int count) => {
+                byte[] value = ByteArray.Random(Config.MaxSmallValueSize - 12).InternalBytes;
+                for (int i = 0; i < count; i++) {
+                    byte[] keyBytes = BitConverter.GetBytes(key + density * i);
+                    Array.Reverse(keyBytes); // make sure they are in lexicographical order so they sort closely together.
+
+                    db.Set(keyBytes, value);
+                }
+            };
+
+            // Make sure that when we have high key density, pages don't start to overlap with more than 10 pages at the level higher than the current one.
+            string path = Path.GetFullPath("TestData\\KeyDensityMaximumPageOverlapTest");
+            using (var db = new KeyValueStore(path)) {
+                db.Truncate();
+                db.Manifest.Logger = (msg) => Console.WriteLine(msg);
+
+                InsertDenseBlock(db, 100, 1, 10000);
+            }
+            Console.WriteLine("Database is densely seeded.");
+            // Close out the db to sync up all pending merge operations
+            using (var db = new KeyValueStore(path)) {
+                db.Manifest.Logger = (msg) => Console.WriteLine(msg);
+
+                // Insert a spanning block that will cover all of the area already covered
+                InsertDenseBlock(db, 0, 10000, 2);
+            }
+            Console.WriteLine("Spanning block inserted.");
+            // Close out the db to sync up all pending merge operations
+            using (var db = new KeyValueStore(path)) {
+                db.Manifest.Logger = (msg) => Console.WriteLine(msg);
+                db.MergeCallback = (level, input, output) => {
+                    // We should not have more than 12 pages on the input side or else our page overlap throttle isn't working properly.
+                    Assert.LessOrEqual(input.Count(), 12);
+                };
+
+                // Now insert a bunch of data into a non-overlapping portion of the space in order to force the spanning block to rise through the levels.
+                InsertDenseBlock(db, 100000, 1, 1000);
+            }
+        }
+
+        //[Test, Explicit("Success depends on a race condition happening. Too unreliable for regular use.")]
+        [Test, Ignore]
         public void RotationShutdownRaceTest() {
 
             // Test to be sure that the rotation page has definitely been written by the time we exit the dispose region (the db must wait for that to occur).
@@ -145,12 +265,13 @@ namespace RazorDBTests {
             }
             using (var db = new KeyValueStore(path)) {
                 using (var mf = db.Manifest.GetLatestManifest()) {
-                    Assert.IsTrue(mf.GetPagesAtLevel(0).Length > 0);
+                    Assert.Greater(mf.GetPagesAtLevel(0).Length, 0);
                 }
             }
         }
 
-        [Test, Explicit("Success depends on a race condition happening. Too unreliable for regular use.")]
+        //[Test, Explicit("Success depends on a race condition happening. Too unreliable for regular use.")]
+        [Test, Ignore]
         public void RotationReadRaceTest() {
 
             string path = Path.GetFullPath("TestData\\RotationReadRaceTest");
@@ -196,8 +317,6 @@ namespace RazorDBTests {
                 db.Truncate();
 
                 int num_items = 30000;
-                int multiple = 3;
-                int read_items = num_items * multiple;
 
                 byte[] split = BitConverter.GetBytes(num_items >> 2);
                 int number_we_should_scan = 0;
@@ -477,7 +596,6 @@ namespace RazorDBTests {
                 foreach (var pair in db.Enumerate()) {
                     try {
                         ByteArray k = new ByteArray(pair.Key);
-                        ByteArray v = new ByteArray(pair.Value);
                         Assert.True(lastKey.CompareTo(k) < 0);
                         lastKey = k;
                         ct++;
@@ -531,7 +649,6 @@ namespace RazorDBTests {
                 foreach (var pair in db.Enumerate()) {
                     try {
                         ByteArray k = new ByteArray(pair.Key);
-                        ByteArray v = new ByteArray(pair.Value);
                         Assert.True(lastKey.CompareTo(k) < 0);
                         lastKey = k;
                         ct++;
@@ -738,6 +855,152 @@ namespace RazorDBTests {
         }
 
         [Test]
+        public void BulkSetEnumerateAllWithMissingSBT_ThrowAll() {
+
+            string path = Path.GetFullPath("TestData\\BulkSetEnumerateAllWithMissingSBT_ThrowAll"+DateTime.Now.Ticks.ToString());
+            var timer = new Stopwatch();
+            int totalSize = 0;
+            int readSize = 0;
+            Action<string> logger = (msg) => { Console.WriteLine(msg); };
+            using (var db = new KeyValueStore(path)) {
+                db.Truncate();
+                timer.Start();
+                for (int i = 0; i < 500000; i++) {
+                    var randomKey = BitConverter.GetBytes(i);
+                    var randomValue = BitConverter.GetBytes(i);
+                    db.Set(randomKey, randomValue);
+
+                    readSize += randomKey.Length + randomValue.Length;
+                    totalSize += randomKey.Length + randomValue.Length;
+                }
+                timer.Stop();
+                Console.WriteLine("Wrote sorted table at a throughput of {0} MB/s", (double)totalSize / timer.Elapsed.TotalSeconds / (1024.0 * 1024.0));
+            }
+
+            // delete the sbt files
+            var files = Directory.GetFiles(path, "*.sbt");
+            foreach(var fname in files)
+                File.Delete(fname);
+
+            // Close and re-open the database to force all the sstable merging to complete.
+            Console.WriteLine("Begin enumeration.");
+            RazorDB.Config.ExceptionHandling = ExceptionHandling.ThrowAll;
+            Assert.Throws(typeof(FileNotFoundException), () => {
+                using (var db = new KeyValueStore(path)) {
+                    foreach (var pair in db.Enumerate());
+                }
+            });
+        }
+
+        [Test]
+        public void BulkSetEnumerateAllWithMissingSBT_AttemptRecovery() {
+            try {
+                RazorDB.Config.ExceptionHandling = ExceptionHandling.AttemptRecovery;
+
+                string path = Path.GetFullPath("TestData\\BulkSetEnumerateAllWithMissingSBT_AttemptRecovery");
+                var timer = new Stopwatch();
+                int totalSize = 0;
+                int readSize = 0;
+                Action<string> logger = (msg) => { Console.WriteLine(msg); };
+                using (var db = new KeyValueStore(path)) {
+                    db.Truncate();
+                    timer.Start();
+                    for (int i = 0; i < 500000; i++) {
+                        var randomKey = BitConverter.GetBytes(i);
+                        var randomValue = BitConverter.GetBytes(i);
+                        db.Set(randomKey, randomValue);
+
+                        readSize += randomKey.Length + randomValue.Length;
+                        totalSize += randomKey.Length + randomValue.Length;
+                    }
+                    timer.Stop();
+                    Console.WriteLine("Wrote sorted table at a throughput of {0} MB/s", (double)totalSize / timer.Elapsed.TotalSeconds / (1024.0 * 1024.0));
+                }
+
+                // delete the sbt files
+                var files = Directory.GetFiles(path, "*.sbt");
+                foreach (var fname in files)
+                    File.Delete(fname);
+
+                // Close and re-open the database to force all the sstable merging to complete.
+                Console.WriteLine("Begin enumeration.");
+                using (var db = new KeyValueStore(path)) {
+                    timer.Reset();
+                    timer.Start();
+                    ByteArray lastKey = ByteArray.Empty;
+                    int ct = 0;
+                    foreach (var pair in db.Enumerate()) {
+                        try {
+                            ByteArray k = new ByteArray(pair.Key);
+                            ByteArray v = new ByteArray(pair.Value);
+                            Assert.AreEqual(k, v);
+                            Assert.True(lastKey.CompareTo(k) < 0);
+                            lastKey = k;
+                            ct++;
+                        } catch (Exception /*e*/) {
+                            //Console.WriteLine("Key: {0}\n{1}",insertedItem.Key,e);
+                            //Debugger.Launch();
+                            //db.Get(insertedItem.Key.InternalBytes);
+                            //db.Manifest.LogContents();
+                            throw;
+                        }
+                    }
+                    timer.Stop();
+                    Assert.AreEqual(80568, ct);
+                    Console.WriteLine("Enumerated read throughput of {0} MB/s (avg {1} ms per 1000 items)", (double)readSize / timer.Elapsed.TotalSeconds / (1024.0 * 1024.0), (double)timer.Elapsed.TotalSeconds / (double)105);
+                }
+
+                // add some more records after deleting files
+                using (var db = new KeyValueStore(path)) {
+                    timer.Start();
+                    // add 1,000,000 new keys
+                    for (int i = 1000000; i < 3000000; i++) {
+                        var randomKey = BitConverter.GetBytes(i);
+                        var randomValue = BitConverter.GetBytes(i);
+                        db.Set(randomKey, randomValue);
+
+                        readSize += randomKey.Length + randomValue.Length;
+                        totalSize += randomKey.Length + randomValue.Length;
+                    }
+                    timer.Stop();
+                    Console.WriteLine("Wrote sorted table at a throughput of {0} MB/s", (double)totalSize / timer.Elapsed.TotalSeconds / (1024.0 * 1024.0));
+                }
+
+                // Close and re-open the database to force all the sstable merging to complete.
+                Console.WriteLine("Begin enumeration.");
+                using (var db = new KeyValueStore(path)) {
+                    timer.Reset();
+                    timer.Start();
+                    ByteArray lastKey = ByteArray.Empty;
+                    int ct = 0;
+                    foreach (var pair in db.Enumerate()) {
+                        try {
+                            ByteArray k = new ByteArray(pair.Key);
+                            ByteArray v = new ByteArray(pair.Value);
+                            Assert.AreEqual(k, v);
+                            Assert.True(lastKey.CompareTo(k) < 0);
+                            lastKey = k;
+                            ct++;
+                        } catch (Exception /*e*/) {
+                            //Console.WriteLine("Key: {0}\n{1}",insertedItem.Key,e);
+                            //Debugger.Launch();
+                            //db.Get(insertedItem.Key.InternalBytes);
+                            //db.Manifest.LogContents();
+                            throw;
+                        }
+                    }
+                    timer.Stop();
+                    Assert.AreEqual(2080568, ct);
+                    Console.WriteLine("Enumerated read throughput of {0} MB/s (avg {1} ms per 1000 items)", (double)readSize / timer.Elapsed.TotalSeconds / (1024.0 * 1024.0), (double)timer.Elapsed.TotalSeconds / (double)105);
+                }
+            } finally {
+                RazorDB.Config.ExceptionHandling = ExceptionHandling.ThrowAll;
+            }
+
+        }
+
+
+        [Test]
         public void BulkSetEnumerateFromKey() {
 
             string path = Path.GetFullPath("TestData\\BulkSetEnumerateFromKey");
@@ -772,8 +1035,6 @@ namespace RazorDBTests {
                 foreach (var pair in db.EnumerateFromKey( searchKey )) {
                     try {
                         int num = BitConverter.ToInt32(pair.Key.Reverse().ToArray(),0);
-                        ByteArray k = new ByteArray(pair.Key);
-                        ByteArray v = new ByteArray(pair.Value);
 
                         Assert.GreaterOrEqual(num, 50000);
                         sum += num;

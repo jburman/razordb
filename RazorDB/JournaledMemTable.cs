@@ -1,17 +1,18 @@
-﻿/* 
-Copyright 2012 Gnoso Inc.
+﻿/*
+Copyright 2012, 2013 Gnoso Inc.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
+This software is licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except for what is in compliance with the License.
+
+You may obtain a copy of this license at
 
     http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either expressed or implied.
+
+See the License for the specific language governing permissions and limitations.
 */
 using System;
 using System.Collections.Generic;
@@ -52,18 +53,18 @@ namespace RazorDB {
         private string _baseFileName;
         private int _version;
 
-        public IEnumerable<KeyValuePair<KeyEx, Value>> EnumerateSnapshot() {
+        public IEnumerable<KeyValuePair<Key, Value>> EnumerateSnapshot() {
             // Grab sorted copy of the internal memtable contents
             return _memTable.GetEnumerableSnapshot();
         }
-        public IEnumerable<KeyValuePair<KeyEx, Value>> EnumerateSnapshotFromKey(KeyEx key) {
+        public IEnumerable<KeyValuePair<Key, Value>> EnumerateSnapshotFromKey(Key key) {
             // Grab sorted copy of the internal memtable contents
             return _memTable.GetEnumerableSnapshot().Where(pair => pair.Key.CompareTo(key) >= 0);
         }
 
         public int Version { get { return _version; } }
 
-        public bool Add(KeyEx key, Value value) {
+        public bool Add(Key key, Value value) {
 
             if (_journal == null || _memTable == null)
                 return false;
@@ -77,7 +78,7 @@ namespace RazorDB {
 
         }
 
-        public bool Lookup(KeyEx key, out Value value) {
+        public bool Lookup(Key key, out Value value) {
             return _memTable.Lookup(key, out value);
         }
 
@@ -85,11 +86,11 @@ namespace RazorDB {
             get { return _memTable.Full; }
         }
 
-        public KeyEx FirstKey {
+        public Key FirstKey {
             get { return _memTable.FirstKey; }
         }
 
-        public KeyEx LastKey {
+        public Key LastKey {
             get { return _memTable.LastKey; }
         }
 

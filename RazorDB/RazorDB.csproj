@@ -77,7 +77,6 @@
     <Compile Include="C5\WrappedArray.cs" />
     <Compile Include="C5\Wrappers.cs" />
     <Compile Include="Cache.cs" />
-    <Compile Include="Compression.cs" />
     <Compile Include="Config.cs" />
     <Compile Include="Journal.cs" />
     <Compile Include="JournaledMemTable.cs" />
@@ -87,13 +86,12 @@
     <Compile Include="MemTable.cs" />
     <Compile Include="MergeEnumerator.cs" />
     <Compile Include="MurmurHash.cs" />
-    <Compile Include="Pipeline.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="SortedBlockTable.cs" />
-    <Compile Include="SortedBlockTableFileManager.cs" />
     <Compile Include="TableManager.cs" />
     <Compile Include="Value.cs" />
     <Compile Include="Viz.cs" />
+    <Compile Include="BinaryHelper.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="RazorStrongName.snk" />

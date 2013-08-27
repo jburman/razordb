@@ -1,19 +1,19 @@
-﻿/* 
-Copyright 2012 Gnoso Inc.
+﻿/*
+Copyright 2012, 2013 Gnoso Inc.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
+This software is licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except for what is in compliance with the License.
+
+You may obtain a copy of this license at
 
     http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
-*/
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either expressed or implied.
 
+See the License for the specific language governing permissions and limitations.
+*/
 using System;
 using NUnit.Framework;
 using System.Text;
@@ -94,7 +94,6 @@ namespace RazorDBTests {
 
                 timer.Start();
                 for (int i = 0; i < num_items; i++) {
-                    var key = BitConverter.GetBytes(i);
                     var items = db.Find("Index", BitConverter.GetBytes(i + 10));
                     var val = items.First();
                     Assert.AreEqual(value.InternalBytes, val.Value);
@@ -141,13 +140,12 @@ namespace RazorDBTests {
             }
         }
 
-        [Test]
-        public void TestTooLargeForV1Data() {
+        [Test, ExpectedException(typeof(InvalidDataException))]
+        public void TestTooLargeData() {
 
             string path = Path.GetFullPath("TestData\\TestTooLargeData");
             using (var db = new KeyValueStore(path)) {
-                db.Truncate();
-                db.Set(KeyEx.Random(10).KeyBytes, ByteArray.Random(Config.MaxSmallValueSize * 0x100).InternalBytes);
+                db.Set(Key.Random(10).KeyBytes, ByteArray.Random(Config.MaxLargeValueSize).InternalBytes);
             }
         }
 
@@ -186,13 +184,13 @@ namespace RazorDBTests {
                 // Create a random set of keybytes
                 List<byte[]> keys = new List<byte[]>();
                 for (int i = 0; i < 10; i++) {
-                    keys.Add(KeyEx.Random(10).KeyBytes);
+                    keys.Add(Key.Random(10).KeyBytes);
                 }
 
                 // Set Evens to large
                 for (int i = 0; i < keys.Count; i++) {
                     var k = keys[i];
-                    var v = ((i & 1) == 0) ? GenerateBlock(Config.MaxSmallValueSize * 0x100) : GenerateBlock(10);
+                    var v = ((i & 1) == 0) ? GenerateBlock(Config.MaxLargeValueSize - 100) : GenerateBlock(10);
                     db.Set(k, v);
                 }
 
@@ -221,13 +219,13 @@ namespace RazorDBTests {
                 // Create a random set of keybytes
                 List<byte[]> keys = new List<byte[]>();
                 for (int i = 0; i < 10; i++) {
-                    keys.Add(KeyEx.Random(10).KeyBytes);
+                    keys.Add(Key.Random(10).KeyBytes);
                 }
 
                 // Set Odds to large
                 for (int i = 0; i < keys.Count; i++) {
                     var k = keys[i];
-                    var v = ((i & 1) == 1) ? GenerateBlock(Config.MaxSmallValueSize * 0x100) : GenerateBlock(10);
+                    var v = ((i & 1) == 1) ? GenerateBlock(Config.MaxLargeValueSize - 100) : GenerateBlock(10);
                     db.Set(k, v);
                 }
 
@@ -253,7 +251,7 @@ namespace RazorDBTests {
             // Create a random set of keybytes
             List<byte[]> keys = new List<byte[]>();
             for (int i = 0; i < 10; i++) {
-                keys.Add(new KeyEx(new byte[] { (byte)i, (byte)i }, 0).KeyBytes);
+                keys.Add( new Key(new byte[] { (byte)i, (byte)i }, 0).KeyBytes);
             }
            
             using (var db = new KeyValueStore(path)) {
@@ -265,7 +263,7 @@ namespace RazorDBTests {
                 for (int i = 0; i < keys.Count; i++) {
                     var k = keys[i];
                     if (((i & 1) == 0)) {
-                        db.Set(k, GenerateBlock(Config.MaxSmallValueSize * 0x100));
+                        db.Set(k, GenerateBlock(Config.MaxLargeValueSize - 100));
                     } else {
                         db.Set(k, GenerateBlock(10));
                     }
@@ -275,7 +273,7 @@ namespace RazorDBTests {
                 for (int i = 0; i < keys.Count; i++) {
                     var k = keys[i];
                     if (((i & 1) == 1)) {
-                        db.Set(k, GenerateBlock(Config.MaxSmallValueSize * 0x100));
+                        db.Set(k, GenerateBlock(Config.MaxLargeValueSize - 100));
                     } else {
                         db.Set(k, GenerateBlock(10));
                     }

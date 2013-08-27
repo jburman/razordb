@@ -1,17 +1,18 @@
-﻿/* 
-Copyright 2012 Gnoso Inc.
+﻿/*
+Copyright 2012, 2013 Gnoso Inc.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
+This software is licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except for what is in compliance with the License.
+
+You may obtain a copy of this license at
 
     http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either expressed or implied.
+
+See the License for the specific language governing permissions and limitations.
 */
 using System;
 using System.Collections.Generic;
@@ -23,7 +24,7 @@ using System.Diagnostics;
 using System.IO;
 
 namespace RazorDBTests {
-    
+
     [TestFixture]
     public class IndexingTests {
 
@@ -33,7 +34,7 @@ namespace RazorDBTests {
             string path = Path.GetFullPath("TestData\\TruncateTest");
             using (var db = new KeyValueStore(path)) {
                 var indexed = new SortedDictionary<string, byte[]>();
-                for ( int i=0; i < 15000; i++) {
+                for (int i = 0; i < 15000; i++) {
                     indexed["RandomIndex"] = ByteArray.Random(20).InternalBytes;
                     var randKey = ByteArray.Random(40);
                     var randValue = ByteArray.Random(256);
@@ -44,7 +45,7 @@ namespace RazorDBTests {
                 db.Truncate();
             }
             var files = Directory.GetFiles(path, "*.*", SearchOption.AllDirectories);
-            Assert.AreEqual(new string[] { Path.GetFullPath(Path.Combine(path,"0.jf")) }, files);
+            Assert.AreEqual(new string[] { Path.GetFullPath(Path.Combine(path, "0.jf")) }, files);
             var dirs = Directory.GetDirectories(path, "*.*", SearchOption.AllDirectories);
             Assert.AreEqual(new string[0], dirs);
         }
@@ -53,7 +54,6 @@ namespace RazorDBTests {
         public void AddObjectsAndLookup() {
 
             string path = Path.GetFullPath("TestData\\AddObjectsAndLookup");
-            var timer = new Stopwatch();
 
             using (var db = new KeyValueStore(path)) {
                 db.Truncate();
@@ -76,7 +76,7 @@ namespace RazorDBTests {
             }
             using (var db = new KeyValueStore(path)) {
                 var zeros = db.Find("NumberType", Encoding.UTF8.GetBytes("Zero")).ToList();
-                Assert.AreEqual(1, zeros.Count() );
+                Assert.AreEqual(1, zeros.Count());
                 Assert.AreEqual("0", Encoding.UTF8.GetString(zeros[0].Value));
 
                 var seqs = db.Find("NumberType", Encoding.UTF8.GetBytes("Seq")).ToList();
@@ -99,6 +99,39 @@ namespace RazorDBTests {
                 Assert.AreEqual(0, non.Count());
             }
         }
+
+        [Test]
+        public void FindStartsWith() {
+
+            string path = Path.GetFullPath("TestData\\FindStartsWith");
+
+            using (var db = new KeyValueStore(path)) {
+                db.Truncate();
+
+                var indexed = new SortedDictionary<string, byte[]>();
+                indexed["Bytes"] = Encoding.UTF8.GetBytes("112");
+                db.Set(BitConverter.GetBytes(112), Encoding.UTF8.GetBytes("112"), indexed);
+                indexed["Bytes"] = Encoding.UTF8.GetBytes("1123");
+                db.Set(BitConverter.GetBytes(1123), Encoding.UTF8.GetBytes("1123"), indexed);
+                indexed["Bytes"] = Encoding.UTF8.GetBytes("11235");
+                db.Set(BitConverter.GetBytes(11235), Encoding.UTF8.GetBytes("11235"), indexed);
+                indexed["Bytes"] = Encoding.UTF8.GetBytes("112358");
+                db.Set(BitConverter.GetBytes(112358), Encoding.UTF8.GetBytes("112358"), indexed);
+
+            }
+            using (var db = new KeyValueStore(path)) {
+                var exact = db.Find("Bytes", Encoding.UTF8.GetBytes("1123")).ToList();
+                Assert.AreEqual(1, exact.Count());
+                Assert.AreEqual("1123", Encoding.UTF8.GetString(exact[0].Value));
+
+                var startsWith = db.FindStartsWith("Bytes", Encoding.UTF8.GetBytes("1123")).ToList();
+                Assert.AreEqual(3, startsWith.Count());
+                Assert.AreEqual("112358", Encoding.UTF8.GetString(startsWith[0].Value));
+                Assert.AreEqual("11235", Encoding.UTF8.GetString(startsWith[1].Value));
+                Assert.AreEqual("1123", Encoding.UTF8.GetString(startsWith[2].Value));
+            }
+        }
+
 
         [Test]
         public void AddObjectsAndLookupWhileMerging() {
@@ -261,7 +294,7 @@ namespace RazorDBTests {
 
             // Re-open the main key-value store and delete the value at 30
             using (var db = new KeyValueStore(path)) {
-                db.Set(BitConverter.GetBytes(200),BitConverter.GetBytes(20));
+                db.Set(BitConverter.GetBytes(200), BitConverter.GetBytes(20));
 
                 // Clean the data from the index
                 db.RemoveFromIndex(BitConverter.GetBytes(200), new Dictionary<string, byte[]> { { "Mod", BitConverter.GetBytes(200 % 100) } });
@@ -337,19 +370,17 @@ namespace RazorDBTests {
         public void LookupOldDataFromIndex() {
 
             string path = Path.GetFullPath("TestData\\LookupOldDataFromIndex");
-            var timer = new Stopwatch();
 
             using (var db = new KeyValueStore(path)) {
                 db.Truncate();
                 db.Manifest.Logger = msg => Console.WriteLine(msg);
 
-                var indexed = new SortedDictionary<string, byte[]> {  };
                 db.Set(Encoding.UTF8.GetBytes("KeyA"), Encoding.UTF8.GetBytes("ValueA:1"), new Dictionary<string, byte[]> { { "Idx", Encoding.UTF8.GetBytes("1") } });
                 db.Set(Encoding.UTF8.GetBytes("KeyB"), Encoding.UTF8.GetBytes("ValueB:2"), new Dictionary<string, byte[]> { { "Idx", Encoding.UTF8.GetBytes("2") } });
                 db.Set(Encoding.UTF8.GetBytes("KeyC"), Encoding.UTF8.GetBytes("ValueC:3"), new Dictionary<string, byte[]> { { "Idx", Encoding.UTF8.GetBytes("3") } });
 
-                var lookupValue =  db.Find("Idx", Encoding.UTF8.GetBytes("3")).Single();
-                Assert.AreEqual("ValueC:3", Encoding.UTF8.GetString(lookupValue.Value) );
+                var lookupValue = db.Find("Idx", Encoding.UTF8.GetBytes("3")).Single();
+                Assert.AreEqual("ValueC:3", Encoding.UTF8.GetString(lookupValue.Value));
                 Assert.AreEqual("KeyC", Encoding.UTF8.GetString(lookupValue.Key));
 
                 db.Set(Encoding.UTF8.GetBytes("KeyC"), Encoding.UTF8.GetBytes("ValueC:4"), new Dictionary<string, byte[]> { { "Idx", Encoding.UTF8.GetBytes("4") } });
@@ -358,7 +389,7 @@ namespace RazorDBTests {
                 Assert.AreEqual("ValueC:4", Encoding.UTF8.GetString(lookupValue.Value));
                 Assert.AreEqual("KeyC", Encoding.UTF8.GetString(lookupValue.Key));
 
-                Assert.True( db.Find("Idx", Encoding.UTF8.GetBytes("3")).Any() );
+                Assert.True(db.Find("Idx", Encoding.UTF8.GetBytes("3")).Any());
 
                 db.RemoveFromIndex(Encoding.UTF8.GetBytes("KeyC"), new Dictionary<string, byte[]> { { "Idx", Encoding.UTF8.GetBytes("3") } });
 
@@ -372,13 +403,11 @@ namespace RazorDBTests {
         public void IndexClean() {
 
             string path = Path.GetFullPath("TestData\\IndexClean");
-            var timer = new Stopwatch();
 
             using (var db = new KeyValueStore(path)) {
                 db.Truncate();
                 db.Manifest.Logger = msg => Console.WriteLine(msg);
 
-                var indexed = new SortedDictionary<string, byte[]> { };
                 db.Set(Encoding.UTF8.GetBytes("KeyA"), Encoding.UTF8.GetBytes("ValueA:1"), new Dictionary<string, byte[]> { { "Idx", Encoding.UTF8.GetBytes("1") } });
                 db.Set(Encoding.UTF8.GetBytes("KeyB"), Encoding.UTF8.GetBytes("ValueB:2"), new Dictionary<string, byte[]> { { "Idx", Encoding.UTF8.GetBytes("2") } });
                 db.Set(Encoding.UTF8.GetBytes("KeyC"), Encoding.UTF8.GetBytes("ValueC:3"), new Dictionary<string, byte[]> { { "Idx", Encoding.UTF8.GetBytes("3") } });
@@ -392,7 +421,7 @@ namespace RazorDBTests {
 
             // Open the index directly and confirm that the lookup key is still there
             using (var db = new KeyValueStore(Path.Combine(path, "Idx"))) {
-                Assert.AreEqual(3, db.Enumerate().Count() );
+                Assert.AreEqual(3, db.Enumerate().Count());
             }
 
             using (var db = new KeyValueStore(path)) {

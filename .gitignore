@@ -1,16 +1,18 @@
-
-Debug/*
-External/*
-*/obj/*
-*.suo
-*.pidb
-*/test-results/*
-test-results/*
-NDependOut/*
-RazorDB.ndproj
-Release/*
-*.typemock
-RazorView/bin/*
-packages/*
-RazorUtil/RazorUtil.csproj.user
+# Directories
 .nuget/*
+*/[Bb]in/*
+[Dd]ebug/*
+[Ee]xternal/*
+*/[Oo]bj/*
+[Pp]ackages/*
+[Rr]elease/*
+*/[Tt]est-[Rr]esults/*
+
+# Files
+.DS_Store
+*.csproj.user
+*.pdb
+*.suo
+*.userprefs
+
+.RazorDB.boltdata/*

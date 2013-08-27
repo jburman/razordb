@@ -1,17 +1,18 @@
-﻿/* 
-Copyright 2012 Gnoso Inc.
+﻿/*
+Copyright 2012, 2013 Gnoso Inc.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
+This software is licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except for what is in compliance with the License.
+
+You may obtain a copy of this license at
 
     http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either expressed or implied.
+
+See the License for the specific language governing permissions and limitations.
 */
 using System;
 using System.Collections.Generic;
@@ -94,29 +95,33 @@ namespace RazorDB {
     public class RazorCache {
 
         public RazorCache() {
-            _blockIndexCache = new Cache<KeyEx[]>(Config.IndexCacheSize, index => index.Sum(ba => ba.Length));
+            _blockIndexCache = new Cache<Key[]>(Config.IndexCacheSize, index => index.Sum(ba => ba.Length));
             _blockDataCache = new Cache<byte[]>(Config.DataBlockCacheSize, block => block.Length);
         }
 
-        private Cache<KeyEx[]> _blockIndexCache;
+        private Cache<Key[]> _blockIndexCache;
         private Cache<byte[]> _blockDataCache;
 
-        public KeyEx[] GetBlockTableIndex(string baseName, int level, int version) {
-            KeyEx[] returnValue = null;
+        public int IndexCacheSize { get { return _blockIndexCache.CurrentSize; } }
+        public int DataCacheSize { get { return _blockDataCache.CurrentSize; } }
+
+        public Key[] GetBlockTableIndex(string baseName, int level, int version) {
 
             string fileName = Config.SortedBlockTableFile(baseName, level, version);
-            KeyEx[] index;
+            Key[] index;
 
             if (_blockIndexCache.TryGetValue(fileName, out index)) {
-                returnValue = index;
-            } else {
-                using(var sbt = new SortedBlockTable(null, baseName, level, version)) {
-                    index = sbt.GetIndex();
-                    _blockIndexCache.Set(fileName, index);
-                    returnValue = index;
-                }
+                return index;
             }
-            return returnValue;
+
+            var sbt = new SortedBlockTable(null, baseName, level, version);
+            try {
+                index = sbt.GetIndex();
+                _blockIndexCache.Set(fileName, index);
+                return index;
+            } finally {
+                sbt.Close();
+            }
         }
 
         public byte[] GetBlock(string baseName, int level, int version, int blockNum) {
@@ -127,8 +132,15 @@ namespace RazorDB {
         }
 
         public void SetBlock(string baseName, int level, int version, int blockNum, byte[] block) {
-            string blockKey = Config.SortedBlockTableFile(baseName, level, version) + ":" + blockNum.ToString();
-            _blockDataCache.Set(blockKey, block);
+            try {
+                string blockKey = Config.SortedBlockTableFile(baseName, level, version) + ":" + blockNum.ToString();
+                _blockDataCache.Set(blockKey, block);
+            } catch (Exception ex) {
+                if (Config.ExceptionHandling == ExceptionHandling.ThrowAll)
+                    throw;
+                if (Config.Logger != null)
+                    Config.Logger(string.Format("RazorCache.SetBlock Failed: {0}\nException: {1}", baseName, ex.Message));
+            }
         }
     }
 }

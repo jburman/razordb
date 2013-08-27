@@ -1,17 +1,18 @@
-﻿/* 
-Copyright 2012 Gnoso Inc.
+﻿/*
+Copyright 2012, 2013 Gnoso Inc.
 
-Licensed under the Apache License, Version 2.0 (the "License");
-you may not use this file except in compliance with the License.
-You may obtain a copy of the License at
+This software is licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except for what is in compliance with the License.
+
+You may obtain a copy of this license at
 
     http://www.apache.org/licenses/LICENSE-2.0
 
 Unless required by applicable law or agreed to in writing, software
 distributed under the License is distributed on an "AS IS" BASIS,
-WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-See the License for the specific language governing permissions and
-limitations under the License.
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either expressed or implied.
+
+See the License for the specific language governing permissions and limitations.
 */
 using System;
 using System.Collections.Generic;
@@ -23,11 +24,22 @@ using RazorDB;
 namespace RazorUtil {
 
     public class Program {
-        
+
         static void Main(string[] args) {
             Console.WriteLine("RazorDB Utility\n");
 
-            if (args.Length > 0) {
+            if (args.Length == 0) {
+                Console.WriteLine("Commands:");
+                Console.WriteLine("\tdump-journal  <basedir> <version>");
+                Console.WriteLine("\tdump-table <basedir> <level> <version>");
+                Console.WriteLine("\tdump-manifest <manifest file> ");
+                Console.WriteLine("\tdump-manifest-all <basedir>");
+                Console.WriteLine("\tsplit-manifest <basedir>");
+                Console.WriteLine("\tcheck-each-table <basedir>");
+                Console.WriteLine("\tcheck-database <basedir>");
+                Console.WriteLine("\tremove-orphans <basedir>");
+                Console.WriteLine("\tremove-page <basedir> <level> <version>");
+            } else {
                 switch (args[0].ToLower()) {
                     case "dump-journal":
                         if (args.Length < 3) {
@@ -63,6 +75,21 @@ namespace RazorUtil {
                             }
                         }
                         break;
+                    case "split-manifest":
+                        if (args.Length < 2) {
+                            Console.WriteLine("Invalid parameters");
+                        } else {
+                            var dummyMf = Manifest.NewDummyManifest();
+                            dummyMf.Logger = msg => Console.WriteLine(msg);
+                            int ct = 0;
+                            foreach (var mf in Manifest.ReadAllManifests(args[1])) {
+                                using (var bw = new BinaryWriter(new FileStream(Path.Combine(args[1], "S" + ct.ToString() + ".mf"), FileMode.CreateNew, FileAccess.Write, FileShare.None, 40096))) {
+                                    mf.WriteManifestContents(bw);
+                                }
+                                ct++;
+                            }
+                        }
+                        break;
                     case "check-each-table":
                         if (args.Length < 2) {
                             Console.WriteLine("Invalid parameters");
@@ -77,9 +104,25 @@ namespace RazorUtil {
                             CheckDatabase(args[1]);
                         }
                         break;
+                    case "remove-orphans":
+                        if (args.Length < 2) {
+                            Console.WriteLine("Invalid parameters");
+                        } else {
+                            RemoveOrphanedTables(args[1]);
+                        }
+                        break;
+                    case "remove-page":
+                        if (args.Length < 4) {
+                            Console.WriteLine("Invalid parameters");
+                        } else {
+                            var pageRef = new PageRef { Level = int.Parse(args[2]), Version = int.Parse(args[3]) };
+                            var mf = new Manifest(args[1]);
+                            mf.ModifyPages(new List<PageRecord>(), new List<PageRef> { { pageRef } });
+                        }
+                        break;
                     default:
-                        Console.WriteLine("Unknown command: {0}",args[0]);
-                    break;
+                        Console.WriteLine("Unknown command: {0}", args[0]);
+                        break;
                 }
             }
 
@@ -95,7 +138,7 @@ namespace RazorUtil {
                 int version = int.Parse(fileparts[1]);
 
                 Console.WriteLine("Level: {0} Version: {1}", level, version);
-                
+
                 var tablefile = new SortedBlockTable(cache, baseDir, level, version);
                 try {
                     tablefile.ScanCheck();
@@ -112,6 +155,20 @@ namespace RazorUtil {
             var kv = new KeyValueStore(baseDir, cache);
             try {
                 kv.ScanCheck();
+            } finally {
+                kv.Close();
+            }
+        }
+
+        static void RemoveOrphanedTables(string baseDir) {
+            Console.WriteLine("Removing Orphaned Tables '{0}'", baseDir);
+
+            RazorCache cache = new RazorCache();
+            var kv = new KeyValueStore(baseDir, cache);
+            kv.Manifest.Logger = (msg) => Console.WriteLine(msg);
+
+            try {
+                kv.RemoveOrphanedPages();
             } finally {
                 kv.Close();
             }
@@ -134,5 +191,6 @@ namespace RazorUtil {
                 Console.WriteLine("{0} => {1}", pair.Key.ToString(), pair.Value.ToString());
             }
         }
+
     }
 }
