@@ -76,6 +76,27 @@ namespace RazorDB {
             }
         }
 
+        /// <summary>
+        /// Removes all cache entries where the supplied function returns true for the cache key.
+        /// </summary>
+        /// <param name="predicate">A function to test the cache key for whether it should be removed or not.</param>
+        public void RemoveWhere(Func<string, bool> predicate) {
+            lock (_lock) {
+                var entriesToRemove = new Stack<CacheEntry<T>>();
+                foreach (var cacheEntry in _list) {
+                    if (predicate(cacheEntry.Key)) {
+                        entriesToRemove.Push(cacheEntry);
+                    }
+                }
+
+                foreach (var remove in entriesToRemove) {
+                    _list.Remove(remove);
+                    _hash.Remove(remove.Key);
+                    _currentSize -= remove.Size;
+                }
+            }
+        }
+
         private void CheckCacheSizeAndEvict() {
             while (_currentSize > _sizeLimit) {
 
@@ -94,9 +115,15 @@ namespace RazorDB {
     
     public class RazorCache {
 
-        public RazorCache() {
-            _blockIndexCache = new Cache<Key[]>(Config.IndexCacheSize, index => index.Sum(ba => ba.Length));
-            _blockDataCache = new Cache<byte[]>(Config.DataBlockCacheSize, block => block.Length);
+        public RazorCache() : this(Config.IndexCacheSize, Config.DataBlockCacheSize) {
+        }
+
+        public RazorCache(int indexCacheSize, int dataBlockCacheSize) {
+            if (indexCacheSize < 0) { throw new ArgumentOutOfRangeException("indexCacheSize"); }
+            if (dataBlockCacheSize < 0) { throw new ArgumentOutOfRangeException("dataBlockCacheSize"); }
+
+            _blockIndexCache = new Cache<Key[]>(indexCacheSize, index => index.Sum(ba => ba.Length));
+            _blockDataCache = new Cache<byte[]>(dataBlockCacheSize, block => block.Length);
         }
 
         private Cache<Key[]> _blockIndexCache;
@@ -140,6 +167,27 @@ namespace RazorDB {
                     throw;
                 if (Config.Logger != null)
                     Config.Logger(string.Format("RazorCache.SetBlock Failed: {0}\nException: {1}", baseName, ex.Message));
+            }
+        }
+
+        /// <summary>
+        /// Removes all cache entries related to the supplied Key Value Store "base name".
+        /// </summary>
+        /// <param name="baseName"></param>
+        public void Truncate(string baseName) {
+            try {
+                _blockIndexCache.RemoveWhere((cacheKey) => {
+                    return cacheKey.StartsWith(baseName);
+                });
+
+                _blockDataCache.RemoveWhere((cacheKey) => {
+                    return cacheKey.StartsWith(baseName);
+                });
+            } catch (Exception ex) {
+                if (Config.ExceptionHandling == ExceptionHandling.ThrowAll)
+                    throw;
+                if (Config.Logger != null)
+                    Config.Logger(string.Format("RazorCache.Truncate Failed: {0}\nException: {1}", baseName, ex.Message));
             }
         }
     }

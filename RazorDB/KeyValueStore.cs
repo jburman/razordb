@@ -94,7 +94,7 @@ namespace RazorDB {
 
             _manifest = new Manifest(basePath);
             _currentJournaledMemTable = new JournaledMemTable(_manifest.BaseFileName, _manifest.CurrentVersion(0));
-            _cache = new RazorCache();
+            _cache.Truncate(Manifest.BaseFileName);
             _secondaryIndexes = new Dictionary<string, KeyValueStore>(StringComparer.OrdinalIgnoreCase);
 
             Manifest.LogMessage("Database Truncated.");
