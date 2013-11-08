@@ -176,12 +176,14 @@ namespace RazorDB {
         /// <param name="baseName"></param>
         public void Truncate(string baseName) {
             try {
+                string sortedBlockTableDir = Config.SortedBlockTableDir(baseName);
+
                 _blockIndexCache.RemoveWhere((cacheKey) => {
-                    return cacheKey.StartsWith(baseName);
+                    return cacheKey.StartsWith(sortedBlockTableDir);
                 });
 
                 _blockDataCache.RemoveWhere((cacheKey) => {
-                    return cacheKey.StartsWith(baseName);
+                    return cacheKey.StartsWith(sortedBlockTableDir);
                 });
             } catch (Exception ex) {
                 if (Config.ExceptionHandling == ExceptionHandling.ThrowAll)
