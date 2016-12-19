@@ -1,5 +1,5 @@
 ﻿/*
-Copyright 2012, 2013 Gnoso Inc.
+Copyright 2012-2015 Gnoso Inc.
 
 This software is licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except for what is in compliance with the License.
@@ -24,10 +24,17 @@ using System.Diagnostics;
 
 namespace RazorDB {
 
+    public class RazorUpgradeException : Exception {
+        public RazorUpgradeException(string msg)
+            : base(msg) {
+        }
+    }
+
     public class ManifestImmutable : IDisposable {
 
         public ManifestImmutable(Manifest manifest) {
             _manifest = manifest;
+            RazorFormatVersion = RAZORFORMATCURRENT;
             _pages = new List<PageRecord>[MaxLevels];
             _mergeKeys = new Key[MaxLevels];
             for (int i = 0; i < MaxLevels; i++) {
@@ -36,7 +43,7 @@ namespace RazorDB {
             }
         }
 
-        private ManifestImmutable Clone() {
+        internal ManifestImmutable Clone() {
             // Clone this copy of the manifest
             var clone = new ManifestImmutable(_manifest);
 
@@ -88,6 +95,10 @@ namespace RazorDB {
         public PageRecord FindPageForKey(int level, Key key) {
             int index = FindPageIndexForKey(level, key);
             return index < 0 ? null : _pages[level][index];
+        }
+
+        public PageRecord FindPageForIndex(int level, int index) {
+            return (index < 0) || (index >= _pages[level].Count()) ? null : _pages[level][index];
         }
 
         public PageRecord[] FindPagesForKeyRange(int level, Key startKey, Key endKey) {
@@ -201,10 +212,16 @@ namespace RazorDB {
             return m;
         }
 
+        private const int RAZORFORMATSECRET = 98765432;
+        public const int RAZORFORMATCURRENT = 2;
 
         // Read/Write manifest data
         public void WriteManifestContents(BinaryWriter writer) {
             long startPos = writer.BaseStream.Position;
+
+            // write out the format of the manifest
+            writer.Write7BitEncodedInt(RAZORFORMATSECRET);
+            writer.Write7BitEncodedInt(RAZORFORMATCURRENT);
 
             writer.Write7BitEncodedInt(_versions.Length);
             foreach (var b in _versions) {
@@ -231,8 +248,19 @@ namespace RazorDB {
             writer.Write(size);
         }
 
+
+        public int RazorFormatVersion { get; private set; }
+
         internal void ReadManifestContents(BinaryReader reader) {
+            // read num versions or the razor format at the beginning of the block
             int num_versions = reader.Read7BitEncodedInt();
+            if (num_versions == RAZORFORMATSECRET) {
+                RazorFormatVersion = reader.Read7BitEncodedInt();
+                num_versions = reader.Read7BitEncodedInt();
+            } else {
+                RazorFormatVersion = -1; // all unnumbered formats
+            }
+
             for (int i = 0; i < num_versions; i++) {
                 _versions[i] = reader.Read7BitEncodedInt();
             }
@@ -300,6 +328,7 @@ namespace RazorDB {
         private Manifest() { }
         public Manifest(string baseFileName) {
             _baseFileName = baseFileName;
+            _razorFormatVersion = null;
             Read();
         }
         public static Manifest NewDummyManifest() {
@@ -332,7 +361,7 @@ namespace RazorDB {
         private void CommitManifest(ManifestImmutable manifest) {
             lock (manifestLock) {
                 Write(manifest);
-                _manifests.AddLast(manifest);
+                AddLastManifest(manifest);
             }
         }
 
@@ -347,6 +376,7 @@ namespace RazorDB {
         private void ReleaseManifest(ManifestImmutable manifest) {
             lock (manifestLock) {
                 _manifests.Remove(manifest);
+                _razorFormatVersion = null;
             }
         }
 
@@ -392,9 +422,9 @@ namespace RazorDB {
         }
 
         public void NotifyPageReleased(PageRecord pageRec) {
-            string path = Config.SortedBlockTableFile(BaseFileName, pageRec.Level, pageRec.Version);
-            if (File.Exists(path))
-                File.Delete(path);
+            string path = null;
+            path = Config.SortedBlockTableFile(BaseFileName, pageRec.Level, pageRec.Version);
+            Helper.DeleteFile(path);
         }
 
         private void Write(ManifestImmutable m) {
@@ -435,11 +465,18 @@ namespace RazorDB {
             }
         }
 
+        private void AddLastManifest(ManifestImmutable m) {
+            lock (manifestLock) {
+                _manifests.AddLast(m);
+                _razorFormatVersion = null;
+            }
+        }
+
         private void Read() {
 
             string manifestFile = Config.ManifestFile(_baseFileName);
             if (!File.Exists(manifestFile)) {
-                _manifests.AddLast(new ManifestImmutable(this));
+                AddLastManifest(new ManifestImmutable(this));
                 return;
             }
 
@@ -447,6 +484,8 @@ namespace RazorDB {
             BinaryReader reader = new BinaryReader(fs);
 
             try {
+                var m = new ManifestImmutable(this);
+
                 // Get the size of the last manifest block
                 reader.BaseStream.Seek(-4, SeekOrigin.End);
                 int size = reader.ReadInt32();
@@ -454,15 +493,26 @@ namespace RazorDB {
                 // Now seek to that position and read it
                 reader.BaseStream.Seek(-size - 4, SeekOrigin.End);
 
-                var m = new ManifestImmutable(this);
                 m.ReadManifestContents(reader);
-                _manifests.AddLast(m);
+                AddLastManifest(m);
+
             } catch (Exception ex) {
-                LogMessage("Error reading manifest file: {0}", _baseFileName);
+                LogMessage("Error reading manifest file: {0} - {1}", _baseFileName, ex.Message);
             } finally {
                 reader.Close();
             }
         }
+
+        // Format version for razor datastore
+        private int? _razorFormatVersion = null;
+        public int RazorFormatVersion {
+            get {
+                if(_razorFormatVersion == null)
+                    _razorFormatVersion = _manifests.Last().RazorFormatVersion;
+                return _razorFormatVersion.Value;
+            }
+        }
+
 
         public static IEnumerable<ManifestImmutable> ReadAllManifests(string baseFileName) {
 
@@ -490,12 +540,12 @@ namespace RazorDB {
         private Action<string> _logger;
         public Action<string> Logger {
             get { return _logger; }
-            set { _logger = value; } 
+            set { _logger = value; }
         }
 
         public void LogMessage(string format, params object[] parms) {
             if (Logger != null) {
-                Logger( string.Format(format, parms));   
+                Logger(string.Format(format, parms));
             }
         }
 

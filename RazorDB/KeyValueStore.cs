@@ -1,5 +1,5 @@
 ﻿/*
-Copyright 2012, 2013 Gnoso Inc.
+Copyright 2012-2015 Gnoso Inc.
 
 This software is licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except for what is in compliance with the License.
@@ -16,6 +16,7 @@ See the License for the specific language governing permissions and limitations.
 */
 using System;
 using System.Collections.Generic;
+using System.Collections.Specialized;
 using System.Linq;
 using System.Text;
 using System.Threading;
@@ -64,6 +65,9 @@ namespace RazorDB {
 
         public Manifest Manifest { get { return _manifest; } }
 
+        // version of the datastore format
+        public int RazorFormatVersion { get { return _manifest.RazorFormatVersion; } }
+
         public Action<int, IEnumerable<PageRecord>, IEnumerable<PageRecord>> MergeCallback { get; set; }
 
         internal RazorCache Cache { get { return _cache; } }
@@ -86,10 +90,10 @@ namespace RazorDB {
 
             string basePath = Path.GetFullPath(Manifest.BaseFileName);
             foreach (string file in Directory.GetFiles(basePath, "*.*", SearchOption.AllDirectories)) {
-                File.Delete(file);
+                Helper.DeleteFile(file, false, (msg) => { Manifest.LogMessage(msg); });
             }
             foreach (string dir in Directory.GetDirectories(basePath, "*.*", SearchOption.AllDirectories)) {
-                Directory.Delete(dir, true);
+                Helper.DeleteFolder(dir, false, (msg) => { Manifest.LogMessage(msg); });
             }
 
             _manifest = new Manifest(basePath);
@@ -106,7 +110,7 @@ namespace RazorDB {
 
         public object multiPageLock = new object();
 
-        public void Set(byte[] key, byte[] value, IDictionary<string, byte[]> indexedValues) {
+        public void Set(byte[] key, byte[] value, IEnumerable<KeyValuePair<string, byte[]>> indexedValues) {
 
             int valueSize = value.Length;
             if (valueSize <= Config.MaxSmallValueSize) {
@@ -150,18 +154,56 @@ namespace RazorDB {
             }
         }
 
+
+        public void RemoveIndexRangeForValue(string indexName, byte[] startAt, byte[] value) {
+            KeyValueStore indexStore = GetSecondaryIndex(indexName);
+            var pairs = indexStore.EnumerateFromKey(startAt);
+            foreach (var pair in pairs) {
+                var itemKey = KeyValueStore.ItemKeyFromIndex(pair);
+                if (ByteArray.CompareMemCmp(itemKey, value) == 0)
+                    indexStore.Delete(pair.Key);
+                if (ByteArray.CompareMemCmp(startAt, 0, pair.Key, 0, startAt.Length) == 0)
+                    continue;
+                break;
+            }
+        }
+
         public void CleanIndex(string indexName) {
             KeyValueStore indexStore = GetSecondaryIndex(indexName);
-
             var allValueStoreItems = new HashSet<ByteArray>(this.Enumerate().Select(item => new ByteArray(item.Key)));
             foreach (var indexItem in indexStore.Enumerate()) {
-                if (!allValueStoreItems.Contains(new ByteArray(indexItem.Value))) {
+                byte[] itemKey = KeyValueStore.ItemKeyFromIndex(indexItem);
+                if (!allValueStoreItems.Contains(new ByteArray(itemKey))) {
                     indexStore.Delete(indexItem.Key);
                 }
             }
         }
 
-        private void InternalSet(Key k, Value v, IDictionary<string, byte[]> indexedValues) {
+        /// <summary>
+        /// Get the item key from an index
+        /// </summary>
+        /// <param name="indexPair"></param>
+        /// <returns></returns>
+        private static byte[] ItemKeyFromIndex(KeyValuePair<byte[], byte[]> indexPair, int indexKeyLen = -1) {
+            int offset = 0;
+            if (indexPair.Value.Length > 4) {
+                return indexPair.Value;
+            } else {
+                indexKeyLen = indexKeyLen == -1 ? Helper.Decode7BitInt(indexPair.Value, ref offset) : indexKeyLen;
+                var objectKey = new byte[indexPair.Key.Length - indexKeyLen];
+                Helper.BlockCopy(indexPair.Key, indexKeyLen, objectKey, 0, indexPair.Key.Length - indexKeyLen);
+                return objectKey;
+            }
+        }
+
+        public void DropIndex(string indexName) {
+            KeyValueStore indexStore = GetSecondaryIndex(indexName);
+            if (indexStore != null)
+                indexStore.Truncate();
+        }
+
+
+        private void InternalSet(Key k, Value v, IEnumerable<KeyValuePair<string, byte[]>> indexedValues) {
             int adds = 10;
             while (!_currentJournaledMemTable.Add(k, v)) {
                 adds--;
@@ -179,22 +221,28 @@ namespace RazorDB {
             TableManager.Default.MarkKeyValueStoreAsModified(this);
         }
 
-        public void AddToIndex(byte[] key, IDictionary<string, byte[]> indexedValues) {
-            foreach (var pair in indexedValues) {
-                string IndexName = pair.Key;
+        public void AddToIndex(byte[] itemKey, IEnumerable<KeyValuePair<string, byte[]>> indexValues) {
+            foreach (var pair in indexValues) {
+                var IndexName = pair.Key;
 
                 // Construct Index key by concatenating the indexed value and the target key
                 byte[] indexValue = pair.Value;
-                byte[] indexKey = new byte[key.Length + indexValue.Length];
+                byte[] indexKey = new byte[itemKey.Length + indexValue.Length];
                 indexValue.CopyTo(indexKey, 0);
-                key.CopyTo(indexKey, indexValue.Length);
+                itemKey.CopyTo(indexKey, indexValue.Length);
 
                 KeyValueStore indexStore = GetSecondaryIndex(IndexName);
-                indexStore.Set(indexKey, key);
+
+                // get indexkey length encoding 
+                var lenBytes = new byte[8];
+                var indexValueLen = Helper.Encode7BitInt(lenBytes, indexValue.Length);
+                var indexValueLenBytes = new byte[indexValueLen];
+                Helper.BlockCopy(lenBytes, 0, indexValueLenBytes, 0, indexValueLen);
+                indexStore.Set(indexKey, indexValueLenBytes); // we know the key length 
             }
         }
 
-        private KeyValueStore GetSecondaryIndex(string IndexName) {
+        public KeyValueStore GetSecondaryIndex(string IndexName) {
             KeyValueStore indexStore = null;
             lock (_secondaryIndexes) {
                 if (!_secondaryIndexes.TryGetValue(IndexName, out indexStore)) {
@@ -218,16 +266,23 @@ namespace RazorDB {
             // Capture copy of the rotated table if there is one
             var rotatedMemTable = _rotatedJournaledMemTable;
 
+            // somtimes on shutdown this is null
+            if (_currentJournaledMemTable == null || _manifest == null)
+                return Value.Empty;
+                
             // First check the current memtable
             if (_currentJournaledMemTable.Lookup(lookupKey, out output)) {
                 return output;
             }
+
             // Check the table in rotation
             if (rotatedMemTable != null) {
                 if (rotatedMemTable.Lookup(lookupKey, out output)) {
                     return output;
                 }
             }
+
+
             // Now check the files on disk
             using (var manifest = _manifest.GetLatestManifest()) {
                 // Must check all pages on level 0
@@ -286,6 +341,11 @@ namespace RazorDB {
             }
         }
 
+        public int CountIndex(string indexName) {
+            KeyValueStore indexStore = GetSecondaryIndex(indexName);
+            return indexStore.Enumerate().Count();
+        }
+
         public IEnumerable<KeyValuePair<byte[], byte[]>> Find(string indexName, byte[] lookupValue) {
 
             KeyValueStore indexStore = GetSecondaryIndex(indexName);
@@ -295,11 +355,87 @@ namespace RazorDB {
                 var value = pair.Value;
                 // construct our index key pattern (lookupvalue | key)
                 if (ByteArray.CompareMemCmp(key, 0, lookupValue, 0, lookupValue.Length) == 0) {
-                    if (key.Length == (value.Length + lookupValue.Length) && ByteArray.CompareMemCmp(key, lookupValue.Length, value, 0, value.Length) == 0) {
-                        // Lookup the value of the actual object using the key that was found
-                        var primaryValue = Get(value);
+                    int offset = 0;
+                    byte[] objectKey = null;
+                    if (indexStore.RazorFormatVersion < 2) {
+                        if (ByteArray.CompareMemCmp(key, key.Length - value.Length, value, 0, value.Length) == 0)
+                            objectKey = pair.Value;
+                    } else {
+                        int indexKeyLen = Helper.Decode7BitInt(pair.Value, ref offset);
+                        if (lookupValue.Length == indexKeyLen) {
+                            // Lookup the value of the actual object using the key that was found
+                            // get the object key from the index value tail
+                            objectKey = ItemKeyFromIndex(pair, indexKeyLen);
+                        }
+                    }
+                    if (objectKey != null) {
+                        var primaryValue = this.Get(objectKey);
                         if (primaryValue != null)
-                            yield return new KeyValuePair<byte[], byte[]>(value, primaryValue);
+                            yield return new KeyValuePair<byte[], byte[]>(objectKey, primaryValue);
+                    }
+                } else {
+                    // if the above condition was not met then we must have enumerated past the end of the indexed value
+                    yield break;
+                }
+            }
+        }
+
+        public IEnumerable<KeyValuePair<byte[], byte[]>> FindStartsWith(string indexName, byte[] lookupValue) {
+
+            KeyValueStore indexStore = GetSecondaryIndex(indexName);
+            // Loop over the values
+            foreach (var pair in indexStore.EnumerateFromKey(lookupValue)) {
+                var key = pair.Key;
+                var value = pair.Value;
+                // construct our index key pattern (lookupvalue | key)
+                if (ByteArray.CompareMemCmp(key, 0, lookupValue, 0, lookupValue.Length) == 0) {
+                    int offset = 0;
+                    byte[] objectKey = null;
+                    if (Manifest.RazorFormatVersion < 2) {
+                        if (ByteArray.CompareMemCmp(key, key.Length - value.Length, value, 0, value.Length) == 0)
+                            objectKey = pair.Value;
+                    } else {
+                        int indexKeyLen = Helper.Decode7BitInt(pair.Value, ref offset);
+                        if (lookupValue.Length <= indexKeyLen) {
+                            objectKey = ItemKeyFromIndex(pair, indexKeyLen);
+                        }
+                    }
+                    if (objectKey != null) {
+                        var primaryValue = Get(objectKey);
+                        if (primaryValue != null)
+                            yield return new KeyValuePair<byte[], byte[]>(objectKey, primaryValue);
+                    }
+                } else {
+                    // if the above condition was not met then we must have enumerated past the end of the indexed value
+                    yield break;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Return only the bytes for the key linked to the index (record key in this case is the index value)
+        /// </summary>
+        /// <param name="indexName"></param>
+        /// <param name="lookupValue"></param>
+        /// <returns></returns>
+        public IEnumerable<KeyValuePair<byte[], byte[]>> FindKeysByIndexStartsWith(string indexName, byte[] lookupValue) {
+
+            KeyValueStore indexStore = GetSecondaryIndex(indexName);
+            // Loop over the values
+            foreach (var pair in indexStore.EnumerateFromKey(lookupValue)) {
+                // construct our index key pattern (lookupvalue | key)
+                if (ByteArray.CompareMemCmp(pair.Key, 0, lookupValue, 0, lookupValue.Length) == 0) {
+                    int offset = 0;
+                    if (Manifest.RazorFormatVersion < 2) {
+                        if (ByteArray.CompareMemCmp(pair.Key, pair.Key.Length - pair.Value.Length, pair.Value, 0, pair.Value.Length) == 0)
+                            yield return new KeyValuePair<byte[], byte[]>(pair.Key, pair.Value);
+                    } else {
+                        int indexKeyLen = Helper.Decode7BitInt(pair.Value, ref offset);
+                        if (lookupValue.Length <= indexKeyLen) {
+                            var objectKey = ItemKeyFromIndex(pair, indexKeyLen);
+                            Helper.BlockCopy(pair.Key, indexKeyLen, objectKey, 0, pair.Key.Length - indexKeyLen);
+                            yield return new KeyValuePair<byte[], byte[]>(pair.Key, objectKey);
+                        }
                     }
                 } else {
                     // if the above condition was not met then we must have enumerated past the end of the indexed value
@@ -339,6 +475,30 @@ namespace RazorDB {
             return EnumerateFromKey(new byte[0]);
         }
 
+        public IEnumerable<SortedBlockTable> GetTables() {
+
+            var enumerators = new List<IEnumerable<KeyValuePair<Key, Value>>>();
+
+            // Capture copy of the rotated table if there is one
+            var rotatedMemTable = _rotatedJournaledMemTable;
+
+            // Select main MemTable
+            enumerators.Add(_currentJournaledMemTable.EnumerateSnapshotFromKey(Key.Empty));
+
+            if (rotatedMemTable != null)
+                enumerators.Add(rotatedMemTable.EnumerateSnapshotFromKey(Key.Empty));
+
+            // Now check the files on disk
+            using (var manifestSnapshot = _manifest.GetLatestManifest()) {
+                List<SortedBlockTable> tables = new List<SortedBlockTable>();
+                for (int i = 0; i < manifestSnapshot.NumLevels; i++) {
+                    tables.AddRange(manifestSnapshot.GetPagesAtLevel(i).OrderByDescending(page => page.Version)
+                                    .Select(page => new SortedBlockTable(_cache, _manifest.BaseFileName, page.Level, page.Version)));
+                }
+                return tables;
+            }
+        }
+
         private IEnumerable<KeyValuePair<Key, Value>> InternalEnumerateFromKey(byte[] startingKey) {
 
             if (startingKey == null) {
@@ -354,31 +514,33 @@ namespace RazorDB {
             // Select main MemTable
             enumerators.Add(_currentJournaledMemTable.EnumerateSnapshotFromKey(key));
 
-            if (rotatedMemTable != null) {
+            if (rotatedMemTable != null)
                 enumerators.Add(rotatedMemTable.EnumerateSnapshotFromKey(key));
-            }
 
             // Now check the files on disk
             using (var manifestSnapshot = _manifest.GetLatestManifest()) {
-
-                List<SortedBlockTable> tables = new List<SortedBlockTable>();
+                List<SortedBlockTable> pages = new List<SortedBlockTable>();
                 try {
-                    for (int i = 0; i < manifestSnapshot.NumLevels; i++) {
-                        var pages = manifestSnapshot.GetPagesAtLevel(i)
-                            .OrderByDescending(page => page.Version)
-                            .Select(page => new SortedBlockTable(_cache, _manifest.BaseFileName, page.Level, page.Version));
-                        tables.AddRange(pages);
-                    }
-                    enumerators.AddRange(tables.Select(t => t.EnumerateFromKey(_cache, key)));
+                    pages.AddRange(manifestSnapshot.GetPagesAtLevel(0)
+                        .OrderByDescending(page => page.Version)
+                        .Select(page => {
+                            PerformanceCounters.SBTEnumerateFromKey.Increment();
+                            return new SortedBlockTable(_cache, _manifest.BaseFileName, page.Level, page.Version);
+                        }));
+                    pages.ForEach(p => enumerators.Add(p.EnumerateFromKey(_cache, key)));
 
-                    foreach (var pair in MergeEnumerator.Merge(enumerators, t => t.Key)) {
+                    for (int i = 1; i < manifestSnapshot.NumLevels; i++)
+                        enumerators.Add(TableEnumerator.Enumerate(i, _cache, _manifest.BaseFileName, manifestSnapshot, key));
+
+                    foreach (var pair in MergeEnumerator.Merge(enumerators, t => t.Key))
                         yield return pair;
-                    }
+
                 } finally {
                     // make sure all the tables get closed
-                    tables.ForEach(table => table.Close());
+                    pages.ForEach(table => table.Close());
                 }
             }
+
         }
 
         public IEnumerable<KeyValuePair<byte[], byte[]>> EnumerateFromKey(byte[] startingKey) {
@@ -565,7 +727,7 @@ namespace RazorDB {
                             string orphanedFile = Config.SortedBlockTableFile(Manifest.BaseFileName, level, version);
 
                             // Delete the file.
-                            File.Delete(orphanedFile);
+                            Helper.DeleteFile(orphanedFile, true, (msg) => { Manifest.LogMessage(msg); });
 
                             Manifest.LogMessage("Removing Orphaned Pages '{0}'", orphanedFile);
                         }

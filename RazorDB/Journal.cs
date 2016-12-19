@@ -1,5 +1,5 @@
 ﻿/*
-Copyright 2012, 2013 Gnoso Inc.
+Copyright 2012-2015 Gnoso Inc.
 
 This software is licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except for what is in compliance with the License.
@@ -27,7 +27,7 @@ namespace RazorDB {
         public JournalWriter(string baseFileName, int version, bool append) {
             _fileName = Config.JournalFile(baseFileName, version);
             FileMode fileMode = append ? FileMode.Append : FileMode.Create;
-            _writer = new BinaryWriter(new FileStream(_fileName, fileMode, FileAccess.Write, FileShare.None, 1024, false));
+            _writer = new BinaryWriter(new FileStream(_fileName, fileMode, FileAccess.Write, FileShare.None, 1024, FileOptions.SequentialScan));
         }
 
         private BinaryWriter _writer;
@@ -61,8 +61,7 @@ namespace RazorDB {
         }
 
         public void Delete() {
-            if (File.Exists(_fileName))
-                File.Delete(_fileName);
+            Helper.DeleteFile(_fileName);
         }
 
     }
@@ -84,16 +83,23 @@ namespace RazorDB {
             while (data) {
                 try {
                     int keyLen = _reader.Read7BitEncodedInt();
+                    if (keyLen < 0 || keyLen > Config.MaxSmallValueSize) {
+                        throw new InvalidOperationException("Key length is out of range.");
+                    }
                     key = _reader.ReadBytes(keyLen);
                     if (key.Length != keyLen)
                         throw new InvalidOperationException();
                     int valueLen = _reader.Read7BitEncodedInt();
+                    if (valueLen <= 0)
+                        throw new InvalidOperationException("Value length must be greater than 0.");
                     value = _reader.ReadBytes(valueLen);
-                    if (valueLen <= 0 || valueLen != value.Length)
-                        throw new InvalidOperationException();
+                    if (valueLen != value.Length)
+                        throw new InvalidOperationException("Value length does not match expected data length.");
                 } catch (EndOfStreamException) {
                     data = false;
                 } catch (InvalidOperationException) {
+                    data = false;
+                } catch {
                     data = false;
                 }
                 if (data)

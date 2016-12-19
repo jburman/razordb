@@ -1,5 +1,5 @@
 ﻿/*
-Copyright 2012, 2013 Gnoso Inc.
+Copyright 2012-2015 Gnoso Inc.
 
 This software is licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except for what is in compliance with the License.
@@ -28,7 +28,7 @@ namespace RazorDB {
         }
         public Key(byte[] bytes, byte seqNum) {
             byte[] internalBytes = new byte[bytes.Length + 1];
-            Array.Copy(bytes, internalBytes, bytes.Length);
+            Helper.BlockCopy(bytes, 0, internalBytes, 0, bytes.Length);
             internalBytes[bytes.Length] = seqNum;
             _bytes = new ByteArray(internalBytes);
         }
@@ -37,7 +37,7 @@ namespace RazorDB {
         public byte[] KeyBytes {
             get { 
                 byte[] keyBytes = new byte[Length-1];
-                Array.Copy(InternalBytes, keyBytes, Length-1);
+                Helper.BlockCopy(InternalBytes, 0, keyBytes, 0, Length-1);
                 return keyBytes;
             }
         }
@@ -85,6 +85,40 @@ namespace RazorDB {
         }
         public Key WithSequence(byte seqNum) {
             return new Key(KeyBytes, seqNum);
+        }
+
+        static unsafe short LengthOfMatchingPrefix(byte[] a1, byte[] a2) {
+            if (a1 == null || a2 == null)
+                return (short)0;
+
+            fixed (byte* p1 = a1, p2 = a2) {
+                byte* x1 = p1, x2 = p2;
+                int l1 = a1.Length;
+                int l2 = a2.Length;
+                short i = 0;
+                for (i = 0; i < l1 && i < l2; i++, x1 += 1, x2 += 1)
+                    if (*x1 != *x2) return i;
+                return i;
+            }
+
+        }
+
+        public short PrefixLength(byte[] matchPrefix) {
+            return LengthOfMatchingPrefix(InternalBytes, matchPrefix);
+        }
+
+        internal int PrefixCompareTo(byte[] prefixKey, short prefixLen, byte[] block, int offset, int keySize, out byte[] nextKey) {
+            nextKey = new byte[prefixLen + keySize];
+            Buffer.BlockCopy(prefixKey, 0, nextKey, 0, prefixLen);
+            Buffer.BlockCopy(block, offset, nextKey, prefixLen, keySize);
+            return CompareTo(nextKey, 0, nextKey.Length);
+        }
+
+        internal static Key KeyFromPrefix(byte[] prefixKey, short prefixLen, byte[] block, int offset, int keySize) {
+            var mergeKey = new byte[prefixLen + keySize];
+            Buffer.BlockCopy(prefixKey, 0, mergeKey, 0, prefixLen);
+            Buffer.BlockCopy(block, offset, mergeKey, prefixLen, keySize);
+            return new Key(new ByteArray(mergeKey));
         }
     }
 }

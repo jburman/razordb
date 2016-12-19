@@ -1,5 +1,5 @@
 ﻿/*
-Copyright 2012, 2013 Gnoso Inc.
+Copyright 2012-2015 Gnoso Inc.
 
 This software is licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except for what is in compliance with the License.
@@ -111,6 +111,12 @@ namespace RazorDB {
                 _hash.Remove(cacheEntry.Key);
             }
         }
+
+        internal void Clear() {
+            _list.Clear();
+            _hash.Clear();
+            _currentSize = 0;
+        }
     }
     
     public class RazorCache {
@@ -141,6 +147,7 @@ namespace RazorDB {
                 return index;
             }
 
+            PerformanceCounters.SBTGetBlockTableIndex.Increment();
             var sbt = new SortedBlockTable(null, baseName, level, version);
             try {
                 index = sbt.GetIndex();
@@ -191,6 +198,12 @@ namespace RazorDB {
                 if (Config.Logger != null)
                     Config.Logger(string.Format("RazorCache.Truncate Failed: {0}\nException: {1}", baseName, ex.Message));
             }
+        }
+
+        public void Clear()
+        {
+            _blockDataCache.Clear();
+            _blockIndexCache.Clear();
         }
     }
 }

@@ -30,6 +30,90 @@ namespace RazorDBTests {
     public class SortedBlockTableTests {
 
         [Test]
+        public void TestRecordTypeAnding() {
+            byte testbyte = (byte)RecordHeaderFlag.PrefixedRecord;
+            Assert.AreNotEqual(testbyte & (byte)RecordHeaderFlag.Record, testbyte);
+            Assert.AreEqual(testbyte & (byte)RecordHeaderFlag.PrefixedRecord, testbyte);
+            Assert.AreEqual(testbyte & (byte)(RecordHeaderFlag.PrefixedRecord | RecordHeaderFlag.Record), testbyte);
+
+            testbyte = (byte)RecordHeaderFlag.Record;
+            Assert.AreNotEqual(testbyte & (byte)RecordHeaderFlag.PrefixedRecord, testbyte);
+            Assert.AreEqual(testbyte & (byte)RecordHeaderFlag.Record, testbyte);
+            Assert.AreEqual(testbyte & (byte)(RecordHeaderFlag.PrefixedRecord | RecordHeaderFlag.Record), testbyte);
+
+            testbyte = (byte)RecordHeaderFlag.EndOfBlock;
+            Assert.AreEqual(testbyte & (byte)RecordHeaderFlag.EndOfBlock, testbyte);
+            Assert.AreNotEqual(testbyte & (byte)RecordHeaderFlag.PrefixedRecord, testbyte);
+            Assert.AreNotEqual(testbyte & (byte)RecordHeaderFlag.Record, testbyte);
+            Assert.AreNotEqual(testbyte & (byte)(RecordHeaderFlag.Record | RecordHeaderFlag.PrefixedRecord), testbyte);
+        }
+
+
+        [Test]
+        public void TestShortToBytesRoundTrip() {
+            Func<short, byte[]> twoBytes = (num) => {
+                var bytes = new byte[2];
+                bytes[0] = (byte)(num >> 8);
+                bytes[1] = (byte)(num & 255);
+                return bytes;
+            };
+
+            Func<byte[], short> toShort = (bytes) => {
+                return (short)(bytes[0] << 8 | bytes[1]);
+            };
+
+            for (short i = short.MaxValue * -1; i < short.MaxValue; i++) {
+                Assert.AreEqual(i, toShort(twoBytes(i)));
+            }
+        }
+
+        [Test,Explicit]
+        public void DumpPrefixedSBT() {
+
+            string path = Path.GetFullPath("TestData\\DumpPrefixedSBT");
+            if (!Directory.Exists(path))
+                Directory.CreateDirectory(path);
+
+            var mt = new MemTable();
+            for (int i = 0; i < 10000; i++) {
+                var k0 = Key.Random(40);
+                var v0 = Value.Random(200);
+                mt.Add(k0, v0);
+            }
+
+            mt.WriteToSortedBlockTable("TestData\\DumpPrefixedSBT", 0, 10);
+            var cache = new RazorCache();
+            var sbt = new SortedBlockTable(cache, "TestData\\DumpPrefixedSBT", 0, 10);
+            
+            foreach (var pair in sbt.EnumerateRaw()) {
+                Console.WriteLine("Key: {0}   Value: {1}", pair.Key.ToString(), pair.Value.ToString());
+            }
+        }
+
+        [Test,Explicit]
+        public void WriteAndDumpSBT() {
+
+            string path = Path.GetFullPath("TestData\\DumpPrefixedSBT");
+            if (!Directory.Exists(path))
+                Directory.CreateDirectory(path);
+
+            var mt = new MemTable();
+            for (int i = 0; i < 10000; i++) {
+                var k0 = Key.Random(40);
+                var v0 = Value.Random(200);
+                mt.Add(k0, v0);
+            }
+
+            mt.WriteToSortedBlockTable("TestData\\DumpPrefixedSBT", 0, 10);
+            var cache = new RazorCache();
+            var sbt = new SortedBlockTable(cache, "TestData\\DumpPrefixedSBT", 0, 10);
+            sbt.DumpContents((msg) => Console.WriteLine(msg));
+        }
+
+
+
+
+        [Test]
         public void TestFileOpenSpeed() {
 
             string path = Path.GetFullPath("TestData\\TestFileOpenSpeed");

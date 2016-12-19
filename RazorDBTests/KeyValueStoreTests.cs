@@ -243,8 +243,7 @@ namespace RazorDBTests {
             }
         }
 
-        //[Test, Explicit("Success depends on a race condition happening. Too unreliable for regular use.")]
-        [Test, Ignore]
+        [Test, Explicit("Success depends on a race condition happening. Too unreliable for regular use.")]
         public void RotationShutdownRaceTest() {
 
             // Test to be sure that the rotation page has definitely been written by the time we exit the dispose region (the db must wait for that to occur).
@@ -270,8 +269,7 @@ namespace RazorDBTests {
             }
         }
 
-        //[Test, Explicit("Success depends on a race condition happening. Too unreliable for regular use.")]
-        [Test, Ignore]
+        [Test, Explicit("Success depends on a race condition happening. Too unreliable for regular use.")]
         public void RotationReadRaceTest() {
 
             string path = Path.GetFullPath("TestData\\RotationReadRaceTest");
@@ -342,6 +340,10 @@ namespace RazorDBTests {
 
             int numItems = 100000;
             string path = Path.GetFullPath("TestData\\BulkSetWithDelete");
+            if (Directory.Exists(path))
+                Directory.Delete(path, true);
+            Directory.CreateDirectory(path);
+
             using (var db = new KeyValueStore(path)) {
                 db.Manifest.Logger = msg => Console.WriteLine(msg);
                 db.Truncate();
@@ -1193,6 +1195,63 @@ namespace RazorDBTests {
             var spaceRatio = (double)spaceUsedAfterAdditions / (double)spaceUsedNow;
 
             Assert.Less(spaceRatio, 1.4);
+        }
+
+
+        [Test, Explicit]
+        public void DumpKeySpaceUsed() {
+            double valueBytes=0L;
+            double keyBytes = 0L;
+            double dupBytes = 0L;
+            double totalRecords = 0L;
+
+            Action<string> dumpFolderBytes = (folder) => {
+                double tableValBytes = 0L;
+                double tableKeyBytes = 0L;
+                double tableDupBytes = 0L;
+                double tableRecords = 0L;
+                byte[] lastkey = null;
+                using (var kvs = new KeyValueStore(folder)) {
+                    foreach (var pair in kvs.Enumerate()) {
+                        tableRecords++;
+                        tableValBytes += pair.Value.Length;
+                        tableKeyBytes += pair.Key.Length;
+                        if (lastkey != null) {
+                            int i = 0;
+                            for (i = 0; i < lastkey.Length && i < pair.Key.Length; i++)
+                                if (lastkey[i] != pair.Key[i])
+                                    continue;
+                            tableDupBytes += i;
+                        }
+                        lastkey = pair.Key;
+                    }
+                }
+                valueBytes += tableValBytes;
+                keyBytes += tableKeyBytes;
+                dupBytes += tableDupBytes;
+                totalRecords += tableRecords;
+                Console.WriteLine("{0} Total Bytes: {1}", folder, tableValBytes + tableKeyBytes);
+                Console.WriteLine("         #Records: {0}", tableRecords);
+                Console.WriteLine("      Key   Bytes: {0}", tableKeyBytes);
+                Console.WriteLine("      Value Bytes: {0}", tableValBytes);
+                Console.WriteLine("      Dupl. Bytes: {0}", tableDupBytes);
+                Console.WriteLine(" %Savings in keys: {0}%", tableDupBytes / tableKeyBytes * 100);
+                Console.WriteLine(" %Savings overall: {0}%", tableDupBytes / (tableValBytes + tableKeyBytes) * 100);
+                Console.WriteLine();
+            };
+
+            var baseFolder = @"d:\ncoverdata\ncover";
+            foreach (var folder in Directory.GetDirectories(baseFolder, "*", SearchOption.AllDirectories)) 
+                dumpFolderBytes(folder);
+
+            Console.WriteLine("Total KeyValueStore Bytes: {0}", valueBytes + keyBytes);
+            Console.WriteLine("         #Records: {0}", totalRecords);
+            Console.WriteLine("      Key   Bytes: {0}", keyBytes);
+            Console.WriteLine("      Value Bytes: {0}", valueBytes);
+            Console.WriteLine("      Dupl. Bytes: {0}", dupBytes);
+            Console.WriteLine(" %Savings in keys: {0}%", dupBytes / keyBytes * 100);
+            Console.WriteLine(" %Savings overall: {0}%", dupBytes / (valueBytes + keyBytes) * 100);
+
         }
     }
 

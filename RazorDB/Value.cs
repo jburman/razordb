@@ -1,5 +1,5 @@
 ﻿/*
-Copyright 2012, 2013 Gnoso Inc.
+Copyright 2012-2015 Gnoso Inc.
 
 This software is licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except for what is in compliance with the License.
@@ -29,7 +29,7 @@ namespace RazorDB {
         public Value(byte[] bytes, ValueFlag type) {
             byte[] b = new byte[bytes.Length + 1];
             b[0] = (byte) type;
-            Array.Copy(bytes, 0, b, 1, bytes.Length);
+            Helper.BlockCopy(bytes, 0, b, 1, bytes.Length);
             _bytes = new ByteArray(b);
         }
         private ByteArray _bytes;
@@ -41,12 +41,12 @@ namespace RazorDB {
         public byte[] ValueBytes {
             get {
                 byte[] v = new byte[Length - 1];
-                Array.Copy(InternalBytes, 1, v, 0, Length - 1);
+                Helper.BlockCopy(InternalBytes, 1, v, 0, Length - 1);
                 return v; 
             }
         }
         public int CopyValueBytesTo(byte[] block, int offset) {
-            Array.Copy(InternalBytes, 1, block, offset, Length - 1);
+            Helper.BlockCopy(InternalBytes, 1, block, offset, Length - 1);
             return Length - 1;
         }
         public byte[] InternalBytes {

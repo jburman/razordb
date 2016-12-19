@@ -1,5 +1,5 @@
 ﻿/*
-Copyright 2012, 2013 Gnoso Inc.
+Copyright 2012-2015 Gnoso Inc.
 
 This software is licensed under the Apache License, Version 2.0 (the "License");
 you may not use this file except for what is in compliance with the License.
@@ -19,13 +19,15 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.IO;
+using System.Reflection;
+using System.Threading;
 
 namespace RazorDB {
 
     public static class Config {
 
-        public static int IndexCacheSize = 50 * 1024 * 1024;                    // Size of the Block Index Cache in bytes
-        public static int DataBlockCacheSize = 300 * 1024 * 1024;               // Size of the Data Block Cache in bytes
+        public static int IndexCacheSize = 75 * 1024 * 1024;                    // Size of the Block Index Cache in bytes
+        public static int DataBlockCacheSize = 200 * 1024 * 1024;               // Size of the Data Block Cache in bytes
         public static int MaxSortedBlockTableSize = 2 * 1024 * 1024;            // Maximum size we should let the sorted block table grow to before rolling over to a new file.
         public static int MaxMemTableSize = 1 * 1024 * 1024;                    // Maximum size we should let the memtable grow to in memory before compacting.
         public static int SortedBlockSize = 32 * 1024;                          // Size of each block in the sorted table files.
@@ -35,7 +37,7 @@ namespace RazorDB {
         public static int MaxPageSpan = 10;                                     // The maximum number of pages in level L+1 that a level L page can span (w.r.t the key distribution).
 
         public static string SortedBlockTableFile(string baseName, int level, int version) {
-            return baseName + "\\" + level.ToString() + "-" + version.ToString() + ".sbt";
+            return baseName + "\\" + level + "-" + version + ".sbt";
         }
         public static string SortedBlockTableDir(string baseName) {
             return baseName + "\\";
@@ -43,7 +45,7 @@ namespace RazorDB {
         public static FileOptions SortedBlockTableFileOptions = FileOptions.SequentialScan;
             
         public static string JournalFile(string baseName, int version) {
-            return baseName + "\\" + version.ToString() + ".jf";
+            return baseName + "\\" + version + ".jf";
         }
         public static string ManifestFile(string baseName) {
             return baseName + "\\0.mf";
@@ -58,7 +60,7 @@ namespace RazorDB {
             if (level == 0) {
                 return 4;
             } else {
-                return (int) Math.Pow(10, level);
+                return (int)Math.Pow(10, level);
             }
         }
 
@@ -99,6 +101,8 @@ namespace RazorDB {
     }
 
     public static class Helper {
+        unsafe public delegate void InternalBlockCopy(byte[] src, int srcOffset, byte[] dst, int dstOffset, int len);
+        public static InternalBlockCopy BlockCopy = (InternalBlockCopy)Delegate.CreateDelegate(typeof(InternalBlockCopy), typeof(Buffer).GetMethod("InternalBlockCopy", BindingFlags.NonPublic | BindingFlags.Static));
 
         public static int Encode7BitInt(byte[] workingArray, int value) {
             int size = 0;
@@ -127,7 +131,7 @@ namespace RazorDB {
             return val;
         }
         public static int Read7BitEncodedInt(this BinaryReader rdr) {
-            return (int) rdr.Read7BitEncodedUInt();
+            return (int)rdr.Read7BitEncodedUInt();
         }
 
         public static uint Read7BitEncodedUInt(this BinaryReader rdr) {
@@ -146,7 +150,7 @@ namespace RazorDB {
         public static void Write7BitEncodedInt(this BinaryWriter wtr, int value) {
             if (value < 0)
                 throw new InvalidDataException("Negative numbers are not supported.");
-            wtr.Write7BitEncodedUInt( (uint) value);
+            wtr.Write7BitEncodedUInt((uint)value);
         }
         public static void Write7BitEncodedUInt(this BinaryWriter wtr, uint value) {
             uint num = value;
@@ -157,5 +161,55 @@ namespace RazorDB {
             wtr.Write((byte)num);
         }
 
+
+        internal static void DeleteFile(string path, bool delayedOk = false, Action<string> LogMessage = null) {
+            try {
+                if (File.Exists(path))
+                    File.Delete(path);
+            } catch {
+                Action doDelete = () => {
+                    GC.Collect(); //kill object that keep the file. I think dispose will do the trick as well.
+                    Thread.Sleep(500); //Wait for object to be killed. 
+                    try {
+                        File.Delete(path);
+                    } catch (Exception ex) {
+                        if (LogMessage != null)
+                            LogMessage(string.Format("Unable to delete file AFTER RETRY: {0}\r\nException: {1}", path, ex.Message));
+                    }
+                };
+
+                if (delayedOk) {
+                    // try again before logging
+                    ThreadPool.QueueUserWorkItem((none) => { doDelete(); });
+                } else {
+                    doDelete();
+                }
+            }
+        }
+
+        internal static void DeleteFolder(string dir, bool delayedOk = false, Action<string> LogMessage = null) {
+            try {
+                if (Directory.Exists(dir))
+                    Directory.Delete(dir, true);
+            } catch {
+                Action doDelete = () => {
+                    GC.Collect(); //kill object that keep the file. I think dispose will do the trick as well.
+                    Thread.Sleep(500); //Wait for object to be killed. 
+                    try {
+                        Directory.Delete(dir, true);
+                    } catch (Exception ex) {
+                        if (LogMessage != null)
+                            LogMessage(string.Format("Unable to delete directory AFTER RETRY: {0}\r\nException: {1}", dir, ex.Message));
+                    }
+                };
+
+                if (delayedOk) {
+                    // try again before logging
+                    ThreadPool.QueueUserWorkItem((none) => { doDelete(); });
+                } else {
+                    doDelete();
+                }
+            }
+        }
     }
 }
