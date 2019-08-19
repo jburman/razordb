@@ -22,10 +22,10 @@ namespace RazorDB {
 
     public class MemTable {
 
-        private RazorDB.C5.TreeDictionary<Key, Value> _internalTable = new RazorDB.C5.TreeDictionary<Key, Value>();
+        private readonly C5.TreeDictionary<Key, Value> _internalTable = new C5.TreeDictionary<Key, Value>();
         private int _totalKeySize = 0;
         private int _totalValueSize = 0;
-        private object _tableLock = new object();
+        private readonly object _tableLock = new object();
 
         public void Add(Key key, Value value) {
             lock (_tableLock) {

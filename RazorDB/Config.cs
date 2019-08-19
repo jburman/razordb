@@ -101,8 +101,13 @@ namespace RazorDB {
     }
 
     public static class Helper {
-        unsafe public delegate void InternalBlockCopy(byte[] src, int srcOffset, byte[] dst, int dstOffset, int len);
-        public static InternalBlockCopy BlockCopy = (InternalBlockCopy)Delegate.CreateDelegate(typeof(InternalBlockCopy), typeof(Buffer).GetMethod("InternalBlockCopy", BindingFlags.NonPublic | BindingFlags.Static));
+        //unsafe public delegate void InternalBlockCopy(byte[] src, int srcOffset, byte[] dst, int dstOffset, int len);
+        //public static InternalBlockCopy BlockCopy = (InternalBlockCopy)Delegate.CreateDelegate(typeof(InternalBlockCopy), typeof(Buffer).GetMethod("InternalBlockCopy", BindingFlags.NonPublic | BindingFlags.Static));
+
+        public static void BlockCopy(byte[] src, int srcOffset, byte[] dst, int dstOffset, int len)
+        {
+            Buffer.BlockCopy(src, srcOffset, dst, dstOffset, len);
+        }
 
         public static int Encode7BitInt(byte[] workingArray, int value) {
             int size = 0;

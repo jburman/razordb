@@ -44,7 +44,7 @@ namespace RazorDB {
         public static RazorPerformanceCounter SBTEnumerateMergedTablesPrecached { get { if (_SBTEnumerateMergedTablesPrecached == null) Initialize(); return _SBTEnumerateMergedTablesPrecached; } }
 
         private const string perfCategoryName = "RazorDb";
-        private static object _perfCtrLock = new object();
+        private static readonly object _perfCtrLock = new object();
         private static bool _initialized = false;
         private static void Initialize() {
 
@@ -93,7 +93,7 @@ namespace RazorDB {
         }
 
 
-        private static CounterCreationDataCollection _ccData = new CounterCreationDataCollection();
+        private static readonly CounterCreationDataCollection _ccData = new CounterCreationDataCollection();
         private static void AddPerformanceCounterData(string name, string help, PerformanceCounterType type) {
             var ccd = new CounterCreationData() {
                 CounterName = name,
@@ -110,7 +110,7 @@ namespace RazorDB {
     /// in windows.
     /// </summary>
     public class RazorPerformanceCounter {
-        private PerformanceCounter _perfCtr;
+        private readonly PerformanceCounter _perfCtr;
 
         public RazorPerformanceCounter(string category, string name, bool readOnly) {
             try {

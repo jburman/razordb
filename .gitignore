@@ -7,6 +7,7 @@
 [Pp]ackages/*
 [Rr]elease/*
 */[Tt]est-[Rr]esults/*
+.vs/*
 
 # Files
 .DS_Store

@@ -1,114 +1,24 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
-<Project ToolsVersion="4.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+﻿<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
-    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
-    <ProductVersion>8.0.30703</ProductVersion>
-    <SchemaVersion>2.0</SchemaVersion>
-    <ProjectGuid>{444CB98F-56E5-4F71-93C2-FA1D3B503C86}</ProjectGuid>
-    <OutputType>Library</OutputType>
-    <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>RazorDB</RootNamespace>
-    <AssemblyName>RazorDB</AssemblyName>
-    <TargetFrameworkVersion>v3.5</TargetFrameworkVersion>
-    <FileAlignment>512</FileAlignment>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>7.3</LangVersion>
+    <Company>Gnoso</Company>
+    <Version>1.2.0</Version>
+    <Copyright>Copyright © 2012, 2013, 2019</Copyright>
+    <Description>A lightweight, fast, and embedded key value storage database, written in C#.</Description>
+    <PackageReleaseNotes>Update to support .NET Standard 2.0 and use C5 nuget package.</PackageReleaseNotes>
   </PropertyGroup>
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
-    <DebugSymbols>true</DebugSymbols>
-    <DebugType>full</DebugType>
-    <Optimize>false</Optimize>
-    <OutputPath>..\Debug\</OutputPath>
-    <DefineConstants>DEBUG;TRACE</DefineConstants>
-    <ErrorReport>prompt</ErrorReport>
-    <WarningLevel>4</WarningLevel>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <UseVSHostingProcess>false</UseVSHostingProcess>
-  </PropertyGroup>
-  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
-    <DebugType>pdbonly</DebugType>
-    <Optimize>true</Optimize>
-    <OutputPath>..\Release\</OutputPath>
-    <DefineConstants>TRACE</DefineConstants>
-    <ErrorReport>prompt</ErrorReport>
-    <WarningLevel>4</WarningLevel>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
-  <PropertyGroup>
-    <SignAssembly>true</SignAssembly>
-  </PropertyGroup>
-  <PropertyGroup>
-    <AssemblyOriginatorKeyFile>RazorStrongName.snk</AssemblyOriginatorKeyFile>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
   <ItemGroup>
-    <Reference Include="System" />
-    <Reference Include="System.Core" />
+    <PackageReference Include="C5" Version="2.5.3" />
+    <PackageReference Include="Microsoft.Windows.Compatibility" Version="2.1.1" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="ByteArray.cs" />
-    <Compile Include="C5\arrays\ArrayList.cs" />
-    <Compile Include="C5\arrays\CircularQueue.cs" />
-    <Compile Include="C5\arrays\HashedArrayList.cs" />
-    <Compile Include="C5\arrays\SortedArray.cs" />
-    <Compile Include="C5\Attributes.cs" />
-    <Compile Include="C5\Builtin.cs" />
-    <Compile Include="C5\Collections.cs" />
-    <Compile Include="C5\Comparer.cs" />
-    <Compile Include="C5\Delegates.cs" />
-    <Compile Include="C5\Dictionaries.cs" />
-    <Compile Include="C5\Enums.cs" />
-    <Compile Include="C5\Events.cs" />
-    <Compile Include="C5\Exceptions.cs" />
-    <Compile Include="C5\Formatting.cs" />
-    <Compile Include="C5\Hashers.cs" />
-    <Compile Include="C5\hashing\HashBag.cs" />
-    <Compile Include="C5\hashing\HashDictionary.cs" />
-    <Compile Include="C5\hashing\HashTable.cs" />
-    <Compile Include="C5\heaps\IntervalHeap.cs" />
-    <Compile Include="C5\Interfaces.cs" />
-    <Compile Include="C5\linkedlists\HashedLinkedList.cs" />
-    <Compile Include="C5\linkedlists\LinkedList.cs" />
-    <Compile Include="C5\MappedEnumerators.cs" />
-    <Compile Include="C5\Random.cs" />
-    <Compile Include="C5\Records.cs" />
-    <Compile Include="C5\Sorting.cs" />
-    <Compile Include="C5\trees\RedBlackTreeBag.cs" />
-    <Compile Include="C5\trees\RedBlackTreeDictionary.cs" />
-    <Compile Include="C5\trees\RedBlackTreeSet.cs" />
-    <Compile Include="C5\ViewSupport.cs" />
-    <Compile Include="C5\WrappedArray.cs" />
-    <Compile Include="C5\Wrappers.cs" />
-    <Compile Include="Cache.cs" />
-    <Compile Include="Config.cs" />
-    <Compile Include="PerformanceCounters.cs" />
-    <Compile Include="Journal.cs" />
-    <Compile Include="JournaledMemTable.cs" />
-    <Compile Include="Key.cs" />
-    <Compile Include="KeyValueStore.cs" />
-    <Compile Include="Manifest.cs" />
-    <Compile Include="MemTable.cs" />
-    <Compile Include="MergeEnumerator.cs" />
-    <Compile Include="MurmurHash.cs" />
-    <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="SortedBlockTable.cs" />
-    <Compile Include="TableManager.cs" />
-    <Compile Include="Value.cs" />
-    <Compile Include="Viz.cs" />
-    <Compile Include="BinaryHelper.cs" />
+    <Folder Include="Properties\" />
   </ItemGroup>
-  <ItemGroup>
-    <None Include="RazorStrongName.snk" />
-  </ItemGroup>
-  <ItemGroup />
-  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
-  <PropertyGroup>
-    <PostBuildEvent>
-    </PostBuildEvent>
-  </PropertyGroup>
-  <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
-       Other similar extension points exist, see Microsoft.Common.targets.
-  <Target Name="BeforeBuild">
-  </Target>
-  <Target Name="AfterBuild">
-  </Target>
-  -->
 </Project>
