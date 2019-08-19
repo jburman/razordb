@@ -8,6 +8,7 @@
 [Rr]elease/*
 */[Tt]est-[Rr]esults/*
 .vs/*
+BenchmarkDotNet.Artifacts
 
 # Files
 .DS_Store
